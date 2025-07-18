@@ -157,9 +157,9 @@ class ResultFormatter:
 
         def add_events(items, open_tag, close_tag):
             for item in items:
-                start_pos = item["start"] - offset
-                end_pos = item["end"] - offset
-                if 0 <= start_pos <= text_len and 0 <= end_pos <= text_len:
+                start_pos = max(0, item["start"] - offset)
+                end_pos = min(text_len, item["end"] - offset)
+                if start_pos <= end_pos:
                     events_at_pos[start_pos].append((open_tag, True))
                     events_at_pos[end_pos].append((close_tag, False))
 

@@ -14,9 +14,19 @@ class SentenceAnalyzer:
     @classmethod
     def analyze_text(cls, text):
         # Filter lines to keep only those that likely contain English sentences
-        english_sentence_pattern = re.compile(r'[a-zA-Z]')
-        english_lines = [line.strip() for line in text.split('\n') if english_sentence_pattern.search(line)]
-        clean_text = "\n".join(english_lines)
+        cleaned_lines = []
+        for line in text.split('\n'):
+            line = line.strip()
+            # Remove leading numbers and periods (e.g., "1. ", "2. ")
+            line = re.sub(r'^\d+\.\s*', '', line)
+            # Remove common Japanese labels like "テストケース:"
+            line = re.sub(r'^テストケース:\s*', '', line)
+            line = re.sub(r'^\d+\.\s*', '', line) # 再度数字とピリオドを削除（日本語ラベルの後に続く場合）
+
+            if re.search(r'[a-zA-Z]', line): # Check if the line still contains English letters
+                cleaned_lines.append(line)
+        
+        clean_text = "\n".join(cleaned_lines)
         if not clean_text.strip():
             return []
 

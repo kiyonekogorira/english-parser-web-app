@@ -59,13 +59,17 @@ class SentenceAnalyzer:
 
         # 動詞句の候補を抽出
         for token in doc:
-            if token.pos_ == "VERB":
-                vp_tokens = [token] # Start with the verb itself
+            if token.pos_ == "VERB" or token.pos_ == "AUX": # AUX (助動詞) も動詞句の起点と見なす
+                vp_tokens = [token]
 
-                # Add children that are not subjects
+                # 動詞の直接の子孫で、主語ではないものを追加
                 for child in token.children:
-                    if child.dep_ not in ["nsubj", "csubj", "expl"]: # Exclude subjects
-                        vp_tokens.extend(list(child.subtree)) # Add child and its subtree
+                    if child.dep_ not in ["nsubj", "csubj", "expl"]: # 主語を除外
+                        vp_tokens.extend(list(child.subtree))
+
+                # 動詞がAUXの場合、そのheadがVERBであれば、そのVERBのsubtreeも追加
+                if token.pos_ == "AUX" and token.head.pos_ == "VERB":
+                    vp_tokens.extend(list(token.head.subtree))
 
                 # Sort tokens by index to get a continuous span
                 if vp_tokens:

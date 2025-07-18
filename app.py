@@ -60,16 +60,25 @@ class SentenceAnalyzer:
         # 動詞句の候補を抽出
         for token in doc:
             if token.pos_ == "VERB":
-                subtree_tokens = list(token.subtree)
-                start_node = min(subtree_tokens, key=lambda t: t.i)
-                end_node = max(subtree_tokens, key=lambda t: t.i)
-                start_char = start_node.idx
-                end_char = end_node.idx + len(end_node.text)
-                temp_verb_phrases.append({
-                    "text": doc.text[start_char-sent_offset:end_char-sent_offset],
-                    "start": start_char,
-                    "end": end_char
-                })
+                vp_tokens = [token] # Start with the verb itself
+
+                # Add children that are not subjects
+                for child in token.children:
+                    if child.dep_ not in ["nsubj", "csubj", "expl"]: # Exclude subjects
+                        vp_tokens.extend(list(child.subtree)) # Add child and its subtree
+
+                # Sort tokens by index to get a continuous span
+                if vp_tokens:
+                    vp_tokens.sort(key=lambda t: t.i)
+                    start_node = vp_tokens[0]
+                    end_node = vp_tokens[-1]
+                    start_char = start_node.idx
+                    end_char = end_node.idx + len(end_node.text)
+                    temp_verb_phrases.append({
+                        "text": doc.text[start_char-sent_offset:end_char-sent_offset],
+                        "start": start_char,
+                        "end": end_char
+                    })
 
         # 前置詞句の候補を抽出
         for token in doc:

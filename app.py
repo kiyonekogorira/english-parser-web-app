@@ -182,7 +182,7 @@ class ResultFormatter:
         add_events(analyzed_data["verbs"], f'''<span style="{verb_style}">''', "</span>")
         add_events(analyzed_data["noun_phrases"], f'''<span style="{np_style}">[名詞句: ''', "]</span>")
         add_events(analyzed_data["verb_phrases"], f'''<span style="{vp_style}">(動詞句: ''', ")</span>")
-        add_events(analyzed_data["prepositional_phrases"], f'''<span style="{pp_style}">{前置詞句: ''', "}}</span>")
+        add_events(analyzed_data["prepositional_phrases"], f'''<span style="{pp_style}">{{前置詞句: ''', "}}</span>")
 
         # Build the formatted HTML string
         formatted_html = []

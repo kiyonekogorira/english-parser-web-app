@@ -81,6 +81,11 @@ class SentenceAnalyzer:
                 if token.pos_ == "AUX" and token.head.pos_ == "VERB":
                     vp_tokens.extend(list(token.head.subtree))
 
+                # 動詞句の範囲を調整: 主語が動詞句の先頭に来てしまうのを防ぐ
+                # vp_tokensの先頭が主語であれば、その主語を除外する
+                if vp_tokens and vp_tokens[0].dep_ in ["nsubj", "csubj", "expl"]:
+                    vp_tokens = vp_tokens[1:]
+
                 # Sort tokens by index to get a continuous span
                 if vp_tokens:
                     vp_tokens.sort(key=lambda t: t.i)
@@ -177,6 +182,9 @@ class ResultFormatter:
                     events_at_pos[start_pos].append((open_tag, True))
                     events_at_pos[end_pos].append((close_tag, False))
 
+        # Add tags for all element types
+        add_events(analyzed_data["subjects"], f'''<span style="{subject_style}">''', "</span>")
+        add_events(analyzed_data["verbs"], f'''<span style="{verb_style}">''', "</span>")
         # Add tags for all element types
         add_events(analyzed_data["subjects"], f'''<span style="{subject_style}">''', "</span>")
         add_events(analyzed_data["verbs"], f'''<span style="{verb_style}">''', "</span>")

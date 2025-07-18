@@ -69,28 +69,35 @@ class SentenceAnalyzer:
 
         # 動詞句の候補を抽出
         for token in doc:
-            if token.pos_ == "VERB" or token.pos_ == "AUX": # AUX (助動詞) も動詞句の起点と見なす
-                vp_tokens = [token]
+            # VERBまたはAUXが動詞句の核となる
+            if token.pos_ == "VERB" or token.pos_ == "AUX":
+                # 動詞句のトークンを格納するリスト
+                current_vp_tokens = []
 
-                # 動詞の直接の子孫で、主語ではないものを追加
-                for child in token.children:
-                    if child.dep_ not in ["nsubj", "csubj", "expl"]: # 主語を除外
-                        vp_tokens.extend(list(child.subtree))
+                # まず、現在のトークン（動詞または助動詞）を追加
+                current_vp_tokens.append(token)
 
-                # 動詞がAUXの場合、そのheadがVERBであれば、そのVERBのsubtreeも追加
+                # そのトークンの子孫を再帰的に探索し、主語を除外して追加
+                def get_non_subject_dependents(t):
+                    dependents = []
+                    for child in t.children:
+                        # 主語の依存関係を持つ子孫は追加しない
+                        if child.dep_ not in ["nsubj", "csubj", "expl"]:
+                            dependents.append(child)
+                            dependents.extend(get_non_subject_dependents(child)) # 再帰的に子孫を追加
+                    return dependents
+
+                current_vp_tokens.extend(get_non_subject_dependents(token))
+
+                # AUXの場合、そのheadがVERBであれば、そのVERBの非主語の子孫も追加
                 if token.pos_ == "AUX" and token.head.pos_ == "VERB":
-                    vp_tokens.extend(list(token.head.subtree))
+                    current_vp_tokens.extend(get_non_subject_dependents(token.head))
 
-                # 動詞句の範囲を調整: 主語が動詞句の先頭に来てしまうのを防ぐ
-                # vp_tokensの先頭が主語であれば、その主語を除外する
-                if vp_tokens and vp_tokens[0].dep_ in ["nsubj", "csubj", "expl"]:
-                    vp_tokens = vp_tokens[1:]
-
-                # Sort tokens by index to get a continuous span
-                if vp_tokens:
-                    vp_tokens.sort(key=lambda t: t.i)
-                    start_node = vp_tokens[0]
-                    end_node = vp_tokens[-1]
+                # トークンのインデックスに基づいてソートし、連続するスパンを形成
+                if current_vp_tokens:
+                    current_vp_tokens.sort(key=lambda t: t.i)
+                    start_node = current_vp_tokens[0]
+                    end_node = current_vp_tokens[-1]
                     start_char = start_node.idx
                     end_char = end_node.idx + len(end_node.text)
                     temp_verb_phrases.append({

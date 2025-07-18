@@ -199,4 +199,4 @@ if st.button('解析実行'):
 
 if st.button('クリア'):
     st.session_state.text_input = ""
-    st.experimental_rerun() # セッションステートをリセットして再描画
+    st.rerun() # セッションステートをリセットして再描画

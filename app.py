@@ -178,6 +178,18 @@ class ResultFormatter:
 st.title('英文構造解析Webアプリ')
 st.write('ここに英文を入力してください。')
 
+# 凡例
+st.markdown("""
+<div style="font-size: 0.8em; margin-top: 1em; padding: 0.5em; border: 1px solid #eee; border-radius: 5px;">
+    <b>凡例:</b><br>
+    <span style="color:red; font-weight:bold;">主語</span>
+    <span style="color:blue; font-weight:bold;">動詞</span><br>
+    <span style="background-color:#E0FFFF; border:1px solid #00CED1; border-radius:3px; padding:0 2px;">[名詞句: ... ]</span>
+    <span style="background-color:#E0FFE0; border:1px solid #32CD32; border-radius:3px; padding:0 2px;">(動詞句: ... )</span>
+    <span style="background-color:#FFFFE0; border:1px solid #FFD700; border-radius:3px; padding:0 2px;">{前置詞句: ... }}</span>
+</div>
+""", unsafe_allow_html=True)
+
 if 'text_input' not in st.session_state:
     st.session_state.text_input = ""
 

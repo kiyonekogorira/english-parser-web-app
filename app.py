@@ -177,7 +177,7 @@ class ResultFormatter:
 
         subject_style = "color:red; font-weight:bold;"
         verb_style = "color:blue; font-weight:bold;"
-        np_style = "background-color:#E0FFFF; border:1px solid #00CED1; border-radius:3px; padding:0 2px;"
+        np_style = "background-color:#ADD8E6; border:1px solid #00CED1; border-radius:3px; padding:0 2px;"
         vp_style = "background-color:#E0FFE0; border:1px solid #32CD32; border-radius:3px; padding:0 2px;"
         pp_style = "background-color:#FFFFE0; border:1px solid #FFD700; border-radius:3px; padding:0 2px;"
 

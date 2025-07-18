@@ -1,5 +1,6 @@
 import streamlit as st
 import spacy
+import re
 
 # spaCyモデルのロード
 # アプリケーション起動時に一度だけロードするためにst.cache_resourceを使用
@@ -12,15 +13,25 @@ nlp = load_model()
 class SentenceAnalyzer:
     @classmethod
     def analyze_text(cls, text):
-        doc = nlp(text)
+        # Filter lines to keep only those that likely contain English sentences
+        english_sentence_pattern = re.compile(r'[a-zA-Z]')
+        english_lines = [line.strip() for line in text.split('\n') if english_sentence_pattern.search(line)]
+        clean_text = "\n".join(english_lines)
+        if not clean_text.strip():
+            return []
+
+        doc = nlp(clean_text)
         analyzed_sentences = []
         for sent in doc.sents:
+            if not sent.text.strip():
+                continue
             # 文のオフセットを考慮して解析
             analyzed_sentences.append(cls._analyze_sentence(sent))
         return analyzed_sentences
 
     @staticmethod
     def _analyze_sentence(doc):
+        # doc is a spaCy Span object (a sentence)
         subjects = []
         verbs = []
         noun_phrases = []
@@ -28,7 +39,7 @@ class SentenceAnalyzer:
         prepositional_phrases = []
 
         # 文の開始位置をオフセットとして保持
-        offset = doc.start_char
+        sent_offset = doc.start_char
 
         for token in doc:
             # 主語の特定
@@ -55,7 +66,7 @@ class SentenceAnalyzer:
                 start_char = start_node.idx
                 end_char = end_node.idx + len(end_node.text)
                 temp_verb_phrases.append({
-                    "text": doc.text[start_char-offset:end_char-offset],
+                    "text": doc.text[start_char-sent_offset:end_char-sent_offset],
                     "start": start_char,
                     "end": end_char
                 })
@@ -73,7 +84,7 @@ class SentenceAnalyzer:
                 start_char = start_node.idx
                 end_char = end_node.idx + len(end_node.text)
                 temp_prepositional_phrases.append({
-                    "text": doc.text[start_char-offset:end_char-offset],
+                    "text": doc.text[start_char-sent_offset:end_char-sent_offset],
                     "start": start_char,
                     "end": end_char
                 })
@@ -101,6 +112,7 @@ class SentenceAnalyzer:
 
         return {
             "original_text": doc.text,
+            "sent_offset": sent_offset,
             "subjects": subjects,
             "verbs": verbs,
             "noun_phrases": noun_phrases,
@@ -117,7 +129,8 @@ class ResultFormatter:
         full_html = []
         for analyzed_data in self.list_of_analyzed_data:
             full_html.append(self._format_single_html(analyzed_data))
-        return "<br>".join(full_html)
+        # Use <p> tags for better separation between sentences
+        return "".join([f"<p>{html}</p>" for html in full_html])
 
     def _format_single_html(self, analyzed_data):
         original_text = analyzed_data["original_text"]
@@ -125,10 +138,7 @@ class ResultFormatter:
         events_at_pos = [[] for _ in range(text_len + 1)]
         
         # 文の開始位置をオフセットとして取得
-        offset = analyzed_data["subjects"][0]["start"] if analyzed_data["subjects"] else (analyzed_data["verbs"][0]["start"] if analyzed_data["verbs"] else 0)
-        if analyzed_data["noun_phrases"]:
-            offset = min(offset, analyzed_data["noun_phrases"][0]["start"])
-
+        offset = analyzed_data["sent_offset"]
 
         subject_style = "color:red; font-weight:bold;"
         verb_style = "color:blue; font-weight:bold;"
@@ -136,27 +146,22 @@ class ResultFormatter:
         vp_style = "background-color:#E0FFE0; border:1px solid #32CD32; border-radius:3px; padding:0 2px;"
         pp_style = "background-color:#FFFFE0; border:1px solid #FFD700; border-radius:3px; padding:0 2px;"
 
-        # 各要素の開始・終了位置を文の先頭からの相対位置に変換
-        for s in analyzed_data["subjects"]:
-            events_at_pos[s["start"] - offset].append((f'''<span style="{subject_style}">''', True))
-            events_at_pos[s["end"] - offset].append(("</span>", False))
+        def add_events(items, open_tag, close_tag):
+            for item in items:
+                start_pos = item["start"] - offset
+                end_pos = item["end"] - offset
+                if 0 <= start_pos <= text_len and 0 <= end_pos <= text_len:
+                    events_at_pos[start_pos].append((open_tag, True))
+                    events_at_pos[end_pos].append((close_tag, False))
 
-        for v in analyzed_data["verbs"]:
-            events_at_pos[v["start"] - offset].append((f'''<span style="{verb_style}">''', True))
-            events_at_pos[v["end"] - offset].append(("</span>", False))
+        # Add tags for all element types
+        add_events(analyzed_data["subjects"], f'''<span style="{subject_style}">''', "</span>")
+        add_events(analyzed_data["verbs"], f'''<span style="{verb_style}">''', "</span>")
+        add_events(analyzed_data["noun_phrases"], f'''<span style="{np_style}">[NP ''', "]</span>")
+        add_events(analyzed_data["verb_phrases"], f'''<span style="{vp_style}">(VP ''', ")</span>")
+        add_events(analyzed_data["prepositional_phrases"], f'''<span style="{pp_style}">{{PP ''', "}}</span>")
 
-        for np in analyzed_data["noun_phrases"]:
-            events_at_pos[np["start"] - offset].append((f'''<span style="{np_style}">[NP ''', True))
-            events_at_pos[np["end"] - offset].append(("]</span>", False))
-
-        for vp in analyzed_data["verb_phrases"]:
-            events_at_pos[vp["start"] - offset].append((f'''<span style="{vp_style}">(VP ''', True))
-            events_at_pos[vp["end"] - offset].append((")</span>", False))
-
-        for pp in analyzed_data["prepositional_phrases"]:
-            events_at_pos[pp["start"] - offset].append((f'''<span style="{pp_style}">{{PP ''', True))
-            events_at_pos[pp["end"] - offset].append(("}}</span>", False))
-
+        # Build the formatted HTML string
         formatted_html = []
         for i, char in enumerate(original_text):
             events_at_pos[i].sort(key=lambda x: not x[1])
@@ -187,10 +192,13 @@ if st.button('解析実行'):
         try:
             with st.spinner('解析中...'):
                 analyzed_data_list = SentenceAnalyzer.analyze_text(st.session_state.text_input)
-                formatter = ResultFormatter(analyzed_data_list)
-                formatted_html = formatter.format_html_all()
+                if analyzed_data_list:
+                    formatter = ResultFormatter(analyzed_data_list)
+                    formatted_html = formatter.format_html_all()
+                    result_placeholder.markdown(formatted_html, unsafe_allow_html=True)
+                else:
+                    result_placeholder.warning('有効な英文が見つかりませんでした。')
 
-            result_placeholder.markdown(formatted_html, unsafe_allow_html=True)
         except Exception as e:
             result_placeholder.error(f"解析中にエラーが発生しました。入力された英文を確認してください。エラー詳細: {e}")
     else:

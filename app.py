@@ -33,31 +33,67 @@ class SentenceAnalyzer:
         for chunk in self.doc.noun_chunks:
             noun_phrases.append({"text": chunk.text, "start": chunk.start_char, "end": chunk.end_char})
 
-        # 動詞句と前置詞句の特定 (簡易版)
-        # より正確な句の特定には、より複雑なロジックや句構造解析が必要
-        for token in self.doc:
-            # 動詞句 (簡易版: 動詞とその直接の子孫の一部)
-            if token.pos_ == "VERB":
-                # 動詞とその直接の子孫をまとめる
-                # これは完全な動詞句ではないが、視覚化の出発点として
-                vp_tokens = [token] + list(token.children)
-                # トークンのインデックスに基づいてソートし、連続するスパンを形成
-                vp_tokens.sort(key=lambda t: t.idx)
-                if vp_tokens:
-                    start_char = vp_tokens[0].idx
-                    end_char = vp_tokens[-1].idx + len(vp_tokens[-1].text)
-                    verb_phrases.append({"text": self.doc.text[start_char:end_char], "start": start_char, "end": end_char})
+        # 動詞句と前置詞句の特定 (改善版)
+        temp_verb_phrases = []
+        temp_prepositional_phrases = []
 
-            # 前置詞句 (簡易版: 前置詞とその目的語)
-            if token.pos_ == "ADP": # Adposition (前置詞または後置詞)
+        # 動詞句の候補を抽出
+        for token in self.doc:
+            if token.pos_ == "VERB":
+                # 動詞から始まる部分木を基本の句とする
+                subtree_tokens = list(token.subtree)
+                start_node = min(subtree_tokens, key=lambda t: t.i)
+                end_node = max(subtree_tokens, key=lambda t: t.i)
+                start_char = start_node.idx
+                end_char = end_node.idx + len(end_node.text)
+                temp_verb_phrases.append({
+                    "text": self.doc.text[start_char:end_char],
+                    "start": start_char,
+                    "end": end_char
+                })
+
+        # 前置詞句の候補を抽出
+        for token in self.doc:
+            if token.pos_ == "ADP" and any(c.dep_ == "pobj" for c in token.children):
+                pp_tokens = [token]
                 for child in token.children:
-                    if child.dep_ == "pobj": # object of preposition
-                        pp_tokens = [token, child]
-                        pp_tokens.sort(key=lambda t: t.idx)
-                        if pp_tokens:
-                            start_char = pp_tokens[0].idx
-                            end_char = pp_tokens[-1].idx + len(pp_tokens[-1].text)
-                            prepositional_phrases.append({"text": self.doc.text[start_char:end_char], "start": start_char, "end": end_char})
+                    if child.dep_ == "pobj":
+                        pp_tokens.extend(list(child.subtree))
+                
+                start_node = min(pp_tokens, key=lambda t: t.i)
+                end_node = max(pp_tokens, key=lambda t: t.i)
+                start_char = start_node.idx
+                end_char = end_node.idx + len(end_node.text)
+                temp_prepositional_phrases.append({
+                    "text": self.doc.text[start_char:end_char],
+                    "start": start_char,
+                    "end": end_char
+                })
+
+        # 句の重複や包含関係を整理する (長い句を優先)
+        def remove_subsets(phrases):
+            # 重複をなくす
+            unique_phrases_by_span = { (p['start'], p['end']): p for p in phrases }
+            phrases = list(unique_phrases_by_span.values())
+            
+            # 長い句が短い句を包含する場合、短い句を削除
+            result = []
+            for p1 in phrases:
+                is_subset = False
+                for p2 in phrases:
+                    # 自分自身との比較はスキップ
+                    if (p1['start'], p1['end']) == (p2['start'], p2['end']):
+                        continue
+                    # p1がp2に包含されているか
+                    if p2['start'] <= p1['start'] and p1['end'] <= p2['end']:
+                        is_subset = True
+                        break
+                if not is_subset:
+                    result.append(p1)
+            return result
+
+        verb_phrases = remove_subsets(temp_verb_phrases)
+        prepositional_phrases = remove_subsets(temp_prepositional_phrases)
 
 
         return {

@@ -5,14 +5,7 @@ import spacy
 # アプリケーション起動時に一度だけロードするためにst.cache_resourceを使用
 @st.cache_resource
 def load_model():
-    try:
-        nlp = spacy.load("en_core_web_sm")
-    except OSError:
-        st.warning("spaCyモデルが見つかりません。ダウンロードを試みます...")
-        import subprocess
-        subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
-        nlp = spacy.load("en_core_web_sm")
-    return nlp
+    return spacy.load("en_core_web_sm")
 
 nlp = load_model()
 

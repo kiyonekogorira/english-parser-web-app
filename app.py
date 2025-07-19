@@ -58,34 +58,54 @@ def get_noun_phrase_role(root_token):
     if root_token.dep_ == "oprd": return "目的語補語"
     if root_token.dep_ == "appos": return "同格"
     if root_token.dep_ == "npadvmod": return "副詞的修飾 (名詞句)"
+    if root_token.dep_ == "iobj": return "間接目的語"
     return "名詞句"
 
 def get_prepositional_phrase_role(prep_token):
     head = prep_token.head
     if head.pos_ == "VERB":
         if prep_token.text.lower() in ["in", "on", "at", "from", "to", "near"]: return "副詞的修飾 (場所)"
-        if prep_token.text.lower() in ["after", "before", "during", "until", "since"]: return "副詞的修飾 (時)"
+        if prep_token.text.lower() in ["after", "before", "during", "until", "since", "while"]: return "副詞的修飾 (時)"
         if prep_token.text.lower() in ["with", "by"]: return "副詞的修飾 (手段/方法)"
         if prep_token.text.lower() in ["for", "about"]: return "副詞的修飾 (目的/対象)"
+        if prep_token.text.lower() in ["because of", "due to"]: return "副詞的修飾 (原因)"
     elif head.pos_ in ["NOUN", "PROPN"]:
         return "形容詞的修飾 (名詞)"
     return "前置詞句"
 
 def get_verb_phrase_role(verb_token):
-    if verb_token.dep_ == "ROOT": return "述語 (主動詞)"
-    if verb_token.dep_ == "xcomp": return "目的語補語 (不定詞/分詞)"
-    if verb_token.dep_ == "ccomp": return "補文節 (名詞節)"
-    if verb_token.dep_ == "advcl": return "副詞節"
-    if verb_token.dep_ == "acl": return "形容詞節"
+    if verb_token.dep_ == "ROOT":
+        if verb_token.lemma_ in ["be", "seem", "become", "appear", "feel", "look", "sound", "taste", "smell", "grow", "remain", "stay", "turn"]:
+            return "述語 (連結動詞)"
+        return "述語 (主動詞)"
+    if verb_token.dep_ == "xcomp": return "述語 (開補文)"
+    if verb_token.dep_ == "ccomp": return "述語 (補文)"
+    if verb_token.dep_ == "conj": return "述語 (並列)"
+    if verb_token.dep_ == "aux" or verb_token.dep_ == "auxpass": return "助動詞"
     return "述語"
 
 def get_clause_role(clause_root_token):
+    # Find the conjunction (marker) if it exists
+    marker_token = None
+    for child in clause_root_token.children:
+        if child.dep_ == "mark":
+            marker_token = child
+            break
+    # If not found as a child, check if the clause_root_token itself is a conjunction
+    if not marker_token and clause_root_token.pos_ == "SCONJ":
+        marker_token = clause_root_token
+
+    marker_text = marker_token.text.lower() if marker_token else ""
+
     if clause_root_token.dep_ == "advcl":
-        if clause_root_token.text.lower() in ["because", "since", "as"]: return "原因・理由"
-        if clause_root_token.text.lower() in ["although", "though", "even though"]: return "譲歩"
-        if clause_root_token.text.lower() in ["when", "while", "after", "before"]: return "時"
-        if clause_root_token.text.lower() in ["if", "unless"]: return "条件"
-        return "副詞節"
+        if marker_text in ["because", "since", "as"]: return "副詞節 (原因・理由)"
+        if marker_text in ["although", "though", "even though"]: return "副詞節 (譲歩)"
+        if marker_text in ["when", "while", "after", "before", "until", "as soon as"]: return "副詞節 (時)"
+        if marker_text in ["if", "unless", "provided that"]: return "副詞節 (条件)"
+        if marker_text in ["so that", "in order that"]: return "副詞節 (目的)"
+        if marker_text in ["where", "wherever"]: return "副詞節 (場所)"
+        if marker_text in ["as if", "as though"]: return "副詞節 (様態)"
+        return "副詞節" # Default for advcl
     if clause_root_token.dep_ == "acl" or clause_root_token.dep_ == "relcl": return "形容詞節"
     if clause_root_token.dep_ == "ccomp": return "名詞節 (補文)"
     if clause_root_token.dep_ == "xcomp": return "名詞節 (開補文)"

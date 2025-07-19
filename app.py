@@ -35,17 +35,18 @@ class SyntaxElement:
 
     def get_display_text(self, indent_level=0):
         indent = "  " * indent_level
-        display_text = f"{indent}{self.type}"
-        if self.role:
-            display_text += f" ({self.role})"
-        display_text += f": {self.text}"
-
-        # 単語レベルの要素の場合は品詞も表示
-        if self.type == "Word" and self.tokens:
-            token_info = self.tokens[0]
-            display_text = f"{indent}{self.text}: {token_info.pos_} ({token_info.tag_})"
         
-        return display_text
+        # 単語レベルの要素の場合は品詞も表示
+        if self.tokens and len(self.tokens) == 1: # 単一トークンの要素
+            token_info = self.tokens[0]
+            # Wordタイプの場合、roleに品詞名が入るようにbuild_syntax_treeで設定
+            return f"{indent}{self.text}: {self.role} ({token_info.tag_})"
+        else: # 句や節の場合
+            display_text = f"{indent}{self.type}"
+            if self.role:
+                display_text += f" ({self.role})"
+            display_text += f": {self.text}"
+            return display_text
 
 # --- 役割推定の補助関数 ---
 def get_noun_phrase_role(root_token):
@@ -189,7 +190,36 @@ def build_syntax_tree(token, processed_indices):
     # 5. その他の単語 (Word) として処理
     if element is None: # If no larger element was identified
         element_tokens = [token]
-        element = SyntaxElement(token.text, "Word", tokens=[token], start_token_index=token.i, start_char=token.idx, end_char=token.idx + len(token.text))
+        word_type = "Word" # Default
+        word_role = token.pos_ # Default role is POS
+        
+        # More specific types/roles for single words
+        if token.pos_ == "PRON":
+            word_type = "代名詞"
+            word_role = get_noun_phrase_role(token) # e.g., 主語
+        elif token.pos_ == "ADP": # Preposition
+            word_type = "前置詞"
+            word_role = "前置詞"
+        elif token.pos_ == "SCONJ": # Subordinating Conjunction
+            word_type = "接続詞"
+            word_role = "従属接続詞"
+        elif token.pos_ == "CCONJ": # Coordinating Conjunction
+            word_type = "接続詞"
+            word_role = "等位接続詞"
+        elif token.pos_ == "ADV": # Adverb
+            word_type = "副詞"
+            word_role = "副詞"
+        elif token.pos_ == "ADJ": # Adjective
+            word_type = "形容詞"
+            word_role = "形容詞"
+        elif token.pos_ == "DET": # Determiner
+            word_type = "冠詞"
+            word_role = "限定詞"
+        elif token.pos_ == "VERB" or token.pos_ == "AUX": # 単一の動詞が句として認識されない場合
+            word_type = "動詞"
+            word_role = get_verb_phrase_role(token)
+        
+        element = SyntaxElement(token.text, word_type, role=word_role, tokens=[token], start_token_index=token.i, start_char=token.idx, end_char=token.idx + len(token.text))
 
     # Now, if an element was created, mark its tokens as processed and build its children
     if element:
@@ -220,29 +250,30 @@ def analyze_and_format_text(doc):
 
     for sent in doc.sents:
         sentence_element = SyntaxElement(sent.text, "文章全体", "", start_token_index=sent.start, start_char=sent.start_char, end_char=sent.end_char)
-        processed_indices = set()
         
-        # 主節と従属節を明示的に構築
-        main_clause_tokens = []
-        sub_clause_elements = []
+        # 従属節のトークンを事前に特定
+        all_sub_clause_tokens_indices = set()
+        sub_clause_elements_temp = []
 
-        # まず従属節を抽出し、残りを主節とする
-        temp_processed_for_clauses = set()
         for token in sent:
-            if token.i not in temp_processed_for_clauses and token.pos_ != "PUNCT":
-                # 従属節のルートとなるトークンを探す
-                if token.dep_ in ["advcl", "acl", "ccomp", "xcomp", "relcl"] or \
-                   (token.pos_ == "SCONJ" and token.dep_ == "mark") or \
-                   (token.pos_ == "PRON" and token.dep_ == "nsubj" and token.head.dep_ == "relcl"): # 関係代名詞
-                    sub_clause_element = build_syntax_tree(token, temp_processed_for_clauses)
-                    if sub_clause_element:
-                        sub_clause_elements.append(sub_clause_element)
-                else:
-                    # 従属節でないトークンは主節の候補
-                    main_clause_tokens.append(token)
-                    temp_processed_for_clauses.add(token.i)
+            # Check if this token is the root of a subordinate clause
+            if token.dep_ in ["advcl", "acl", "ccomp", "xcomp", "relcl"] or \
+               (token.pos_ == "SCONJ" and token.dep_ == "mark") or \
+               (token.pos_ == "PRON" and token.dep_ == "nsubj" and token.head.dep_ == "relcl"): # 関係代名詞
+                
+                sub_clause_subtree_tokens = get_subtree_tokens(token)
+                # Create a temporary element to get its span and mark its tokens
+                temp_sub_element = SyntaxElement(get_span_text(sub_clause_subtree_tokens), "従属節", get_clause_role(token), tokens=sub_clause_subtree_tokens, start_token_index=token.i, start_char=sub_clause_subtree_tokens[0].idx, end_char=sub_clause_subtree_tokens[-1].idx + len(sub_clause_subtree_tokens[-1].text))
+                sub_clause_elements_temp.append(temp_sub_element)
+                for t in sub_clause_subtree_tokens:
+                    all_sub_clause_tokens_indices.add(t.i)
+
+        # 主節のトークンを構築 (従属節のトークンを除外)
+        main_clause_tokens = []
+        for token in sent:
+            if token.i not in all_sub_clause_tokens_indices:
+                main_clause_tokens.append(token)
         
-        # 主節の構築
         main_clause_text = get_span_text(sorted(main_clause_tokens, key=lambda t: t.i)) if main_clause_tokens else ""
         main_clause_element = SyntaxElement(main_clause_text, "主節", "", 
                                             start_token_index=main_clause_tokens[0].i if main_clause_tokens else -1,
@@ -250,21 +281,31 @@ def analyze_and_format_text(doc):
                                             end_char=main_clause_tokens[-1].idx + len(main_clause_tokens[-1].text) if main_clause_tokens else -1)
         
         # 主節内部の要素を構築
+        main_clause_processed_indices = set()
         for token in sorted(main_clause_tokens, key=lambda t: t.i):
-            if token.i not in processed_indices and token.pos_ != "PUNCT":
-                element = build_syntax_tree(token, processed_indices)
+            if token.pos_ != "PUNCT":
+                element = build_syntax_tree(token, main_clause_processed_indices)
                 if element:
                     main_clause_element.children.append(element)
-        
-        # 主節の子要素をソート
         main_clause_element.children.sort(key=lambda x: x.start_token_index)
 
         sentence_element.children.append(main_clause_element)
 
-        # 従属節を追加
-        for sub_el in sorted(sub_clause_elements, key=lambda x: x.start_token_index):
-            sentence_element.children.append(sub_el)
-        
+        # 従属節の内部要素を構築し、sentence_elementに追加
+        for sub_el_temp in sorted(sub_clause_elements_temp, key=lambda x: x.start_token_index):
+            sub_clause_processed_indices = set()
+            sub_clause_actual_element = SyntaxElement(sub_el_temp.text, sub_el_temp.type, sub_el_temp.role, 
+                                                      tokens=sub_el_temp.tokens, # 元のトークンを渡す
+                                                      start_token_index=sub_el_temp.start_token_index,
+                                                      start_char=sub_el_temp.start_char, end_char=sub_el_temp.end_char)
+            for token in sorted(sub_el_temp.tokens, key=lambda t: t.i):
+                if token.pos_ != "PUNCT":
+                    element = build_syntax_tree(token, sub_clause_processed_indices)
+                    if element:
+                        sub_clause_actual_element.children.append(element)
+            sub_clause_actual_element.children.sort(key=lambda x: x.start_token_index)
+            sentence_element.children.append(sub_clause_actual_element)
+
         # 最終的な要素の順序を調整 (元の文の順序に近づける)
         sentence_element.children.sort(key=lambda x: x.start_token_index)
         parsed_elements.append(sentence_element)
@@ -281,7 +322,7 @@ GRAMMAR_EXPLANATIONS = {
     "前置詞句": "前置詞とそれに続く名詞句（前置詞の目的語）で構成される句です。文中で形容詞的または副詞的に機能します。",
     "不定詞句": "to + 動詞の原形から始まり、名詞、形容詞、または副詞の働きをする句です。",
     "分詞構文": "動詞の現在分詞（-ing形）または過去分詞（-ed/-en形）から始まり、主節に付帯的な状況（時、理由、条件など）を加える句です。",
-    "Word": "文を構成する最小単位である単語です。",
+    "Word": "文を構成する最小単位である単語です。", # この説明は汎用的なWord用
     "主語": "動詞の動作を行う主体、または状態を表す対象です。",
     "述語": "主語の動作や状態を表す動詞の部分です。",
     "直接目的語": "動詞の動作を直接受ける対象です。",
@@ -309,13 +350,22 @@ GRAMMAR_EXPLANATIONS = {
     "副詞節 (様態)": "主節の動作や状態の様態（〜のように）を示します。",
     "形容詞節": "名詞を修飾する節です（関係代名詞節など）。",
     "名詞節 (補文)": "動詞や形容詞の補語となる名詞の働きをする節です。",
-    "名詞節 (開補文)": "主語が省略された名語の働きをする節です。"
+    "名詞節 (開補文)": "主語が省略された名詞の働きをする節です。",
+    "代名詞": "名詞の代わりに人や物を指し示す語です。",
+    "接続詞": "語と語、句と句、節と節をつなぐ語です。",
+    "従属接続詞": "従属節を導き、主節に従属させる接続詞です。",
+    "等位接続詞": "対等な関係の語、句、節をつなぐ接続詞です。",
+    "副詞": "動詞、形容詞、他の副詞、または文全体を修飾し、時、場所、様態などを表します。",
+    "形容詞": "名詞を修飾し、その性質や状態を表します。",
+    "冠詞": "名詞の前に置かれ、その名詞が特定のものか不特定のものかを示す語です（a, an, the）。",
+    "限定詞": "名詞の意味を限定する語です（冠詞、指示代名詞、所有格など）。",
+    "動詞": "主語の動作や状態を表す語です。",
+    "前置詞": "名詞や代名詞の前に置かれ、時、場所、方向、手段などの関係を示す語です。"
 }
 
 # --- 再帰的な表示ヘルパー関数 ---
 def display_syntax_element(element, indent_level=0):
-    indent_str = "  " * indent_level
-    display_text = element.get_display_text(0) # get_display_textは内部でインデントを処理
+    display_text = element.get_display_text(indent_level) # get_display_textは内部でインデントを処理
 
     # 説明があるかチェック
     explanation = None
@@ -326,10 +376,10 @@ def display_syntax_element(element, indent_level=0):
     
     # ポップオーバーまたは通常のテキスト表示
     if explanation:
-        with st.popover(f"{indent_str}{display_text}"):
+        with st.popover(display_text):
             st.markdown(explanation)
     else:
-        st.markdown(f"{indent_str}{display_text}")
+        st.markdown(display_text)
 
     # 子要素を再帰的に表示
     for child in element.children:

@@ -33,25 +33,23 @@ class SyntaxElement:
         self.start_char = start_char if start_char is not None else (tokens[0].idx if tokens else -1)
         self.end_char = end_char if end_char is not None else (tokens[-1].idx + len(tokens[-1].text) if tokens else -1)
 
-    def to_string(self, indent_level=0):
+    def get_display_text(self, indent_level=0):
         indent = "  " * indent_level
-        output = []
         
-        # 単語レベルの要素の場合は品詞も表示
-        if self.tokens and len(self.tokens) == 1: # 単一トークンの要素
+        # 単一トークンの要素の場合
+        if self.tokens and len(self.tokens) == 1: 
             token_info = self.tokens[0]
-            header_text = f"{indent}{self.text}: {self.role} ({token_info.tag_})"
+            # typeがWord以外の場合は、typeとtextを表示
+            if self.type != "Word":
+                return f"{indent}{self.text}: {self.type} ({token_info.tag_})"
+            else: # Wordタイプの場合は、textとrole(POS)を表示
+                return f"{indent}{self.text}: {self.role} ({token_info.tag_})"
         else: # 句や節の場合
-            header_text = f"{indent}{self.type}"
+            display_text = f"{indent}{self.type}"
             if self.role:
-                header_text += f" ({self.role})"
-            header_text += f": {self.text}"
-        
-        output.append(header_text)
-
-        for child in self.children:
-            output.append(child.to_string(indent_level + 1))
-        return "\n".join(output)
+                display_text += f" ({self.role})"
+            display_text += f": {self.text}"
+            return display_text
 
 # --- 役割推定の補助関数 ---
 def get_noun_phrase_role(root_token):
@@ -159,7 +157,7 @@ def build_syntax_tree(token, processed_indices):
             vp_type = "不定詞句"
             # Get subtree of the verb, then add 'to' at the beginning if it's not already there
             verb_subtree_tokens = get_subtree_tokens(token)
-            if to_token not in verb_subtree_tokens: # Ensure 'to' is included and at the start
+            if to_token and to_token not in verb_subtree_tokens: # Ensure 'to' is included and at the start
                 element_tokens = sorted([to_token] + verb_subtree_tokens, key=lambda t: t.i)
             else:
                 element_tokens = verb_subtree_tokens # 'to' is already part of subtree
@@ -191,6 +189,19 @@ def build_syntax_tree(token, processed_indices):
     elif token.pos_ == "ADP" and token.dep_ == "prep":
         element_tokens = get_subtree_tokens(token)
         element = SyntaxElement(get_span_text(element_tokens), "前置詞句", get_prepositional_phrase_role(token), start_token_index=token.i, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
+        
+        # 前置詞句の目的語（名詞句）を子要素として追加
+        pobj_tokens = [child for child in token.children if child.dep_ == "pobj"]
+        if pobj_tokens:
+            # pobj_tokensのルートを探す (通常はpobj自身)
+            pobj_root = pobj_tokens[0] # 簡易的に最初のトークンをルートとする
+            for chunk in token.sent.noun_chunks:
+                if pobj_root == chunk.root: # pobj_rootが名詞句のルートであれば
+                    np_element = SyntaxElement(get_span_text(list(chunk)), "名詞句", get_noun_phrase_role(chunk.root), tokens=list(chunk), start_token_index=chunk.start, start_char=list(chunk)[0].idx, end_char=list(chunk)[-1].idx + len(list(chunk)[-1].text))
+                    element.children.append(np_element)
+                    # 名詞句のトークンをprocessed_indicesに追加
+                    for t in list(chunk): processed_indices.add(t.i)
+                    break
 
     # 5. その他の単語 (Word) として処理
     if element is None: # If no larger element was identified

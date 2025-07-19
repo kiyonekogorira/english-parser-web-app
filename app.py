@@ -92,8 +92,10 @@ def get_clause_role(clause_root_token):
     return "節"
 
 # --- ヘルパー関数 ---
-def get_span_text(span):
-    return span.text
+def get_span_text(tokens):
+    if not tokens: return ""
+    # spaCyのSpanオブジェクトのようにテキストを結合
+    return tokens[0].doc.text[tokens[0].idx : tokens[-1].idx + len(tokens[-1].text)]
 
 def get_subtree_tokens(token):
     return sorted([t for t in token.subtree], key=lambda t: t.i)
@@ -101,131 +103,96 @@ def get_subtree_tokens(token):
 # --- 依存ツリーを再帰的に走査し、構文要素を構築する関数 ---
 def build_syntax_tree(token, processed_indices):
     if token.i in processed_indices or token.pos_ == "PUNCT":
-        processed_indices.add(token.i)
+        processed_indices.add(token.i) # Ensure punctuation is marked processed
         return None
 
+    element = None
+    element_tokens = [] # Tokens belonging to the current element
+
     # 1. 従属節 (Subordinate Clauses) の検出を最優先
+    # 関係代名詞節 (relcl) も含める
     if token.dep_ in ["advcl", "acl", "ccomp", "xcomp", "relcl"] or \
        (token.pos_ == "SCONJ" and token.dep_ == "mark") or \
        (token.pos_ == "PRON" and token.dep_ == "nsubj" and token.head.dep_ == "relcl"): # 関係代名詞
         
-        clause_tokens = get_subtree_tokens(token)
-        clause_text = " ".join([t.text for t in clause_tokens])
-        
-        clause_type = "従属節"
-        clause_role = get_clause_role(token)
-
-        clause_element = SyntaxElement(clause_text, clause_type, clause_role, start_token_index=token.i)
-        
-        for child in token.children:
-            child_element = build_syntax_tree(child, processed_indices)
-            if child_element:
-                clause_element.children.append(child_element)
-        
-        for t in clause_tokens:
-            processed_indices.add(t.i)
-        return clause_element
-
+        element_tokens = get_subtree_tokens(token)
+        element = SyntaxElement(get_span_text(element_tokens), "従属節", get_clause_role(token), start_token_index=token.i)
+    
     # 2. 不定詞句 / 分詞構文 の検出 (動詞がルートの場合)
-    if token.pos_ == "VERB" or token.pos_ == "AUX":
+    elif token.pos_ == "VERB" or token.pos_ == "AUX":
         vp_type = "動詞句"
         vp_role = get_verb_phrase_role(token)
         
         is_infinitive = False
         to_token = None
-        if (token.dep_ in ["xcomp", "ccomp"]) and \
+        # Check for 'to' as a child with PART pos_ and specific dep_ for infinitive
+        if (token.dep_ in ["xcomp", "ccomp", "advcl", "acl"]) and \
            any(child.text.lower() == "to" and child.pos_ == "PART" for child in token.children):
             is_infinitive = True
             to_token = next((child for child in token.children if child.text.lower() == "to" and child.pos_ == "PART"), None)
 
         if is_infinitive and to_token:
             vp_type = "不定詞句"
-            infinitive_tokens = get_subtree_tokens(token) # 動詞のsubtree
-            infinitive_tokens.insert(0, to_token) # 'to' を先頭に追加
-            infinitive_tokens = sorted(list(set(infinitive_tokens)), key=lambda t: t.i) # 重複削除とソート
+            # Get subtree of the verb, then add 'to' at the beginning if it's not already there
+            verb_subtree_tokens = get_subtree_tokens(token)
+            if to_token not in verb_subtree_tokens: # Ensure 'to' is included and at the start
+                element_tokens = sorted([to_token] + verb_subtree_tokens, key=lambda t: t.i)
+            else:
+                element_tokens = verb_subtree_tokens # 'to' is already part of subtree
             
-            infinitive_text = " ".join([t.text for t in infinitive_tokens])
-            vp_element = SyntaxElement(infinitive_text, vp_type, vp_role, start_token_index=to_token.i)
-            
-            for t in infinitive_tokens:
-                if t.i not in processed_indices:
-                    child_element = build_syntax_tree(t, processed_indices)
-                    if child_element:
-                        vp_element.children.append(child_element)
-            
-            for t in infinitive_tokens: processed_indices.add(t.i)
-            return vp_element
+            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=element_tokens[0].i)
 
-        if (token.pos_ == "VERB" and (token.tag_ == "VBG" or token.tag_ == "VBN")) and \
-           (token.dep_ in ["acl", "advcl"]):
+        elif (token.pos_ == "VERB" and (token.tag_ == "VBG" or token.tag_ == "VBN")) and \
+             (token.dep_ in ["acl", "advcl"]):
             vp_type = "分詞構文"
-            participle_tokens = get_subtree_tokens(token)
-            participle_text = " ".join([t.text for t in participle_tokens])
-            vp_element = SyntaxElement(participle_text, vp_type, vp_role, start_token_index=token.i)
-            
-            for t in participle_tokens:
-                if t.i not in processed_indices:
-                    child_element = build_syntax_tree(t, processed_indices)
-                    if child_element:
-                        vp_element.children.append(child_element)
-            
-            for t in participle_tokens: processed_indices.add(t.i)
-            return vp_element
+            element_tokens = get_subtree_tokens(token)
+            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=token.i)
 
-        # 一般的な動詞句
-        vp_tokens = [token]
-        for child in token.children:
-            if child.i not in processed_indices and child.pos_ != "PUNCT":
-                vp_tokens.append(child)
-        
-        vp_tokens = sorted(vp_tokens, key=lambda t: t.i)
-        vp_text = " ".join([t.text for t in vp_tokens])
-        
-        vp_element = SyntaxElement(vp_text, vp_type, vp_role, start_token_index=token.i)
-        for t in vp_tokens:
-            if t.i not in processed_indices:
-                child_element = build_syntax_tree(t, processed_indices)
-                if child_element:
-                    vp_element.children.append(child_element)
-        
-        for t in vp_tokens: processed_indices.add(t.i)
-        return vp_element
+        else: # General Verb Phrase
+            element_tokens = get_subtree_tokens(token) # Use subtree for general VP
+            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=token.i)
 
     # 3. 名詞句 (Noun Phrases) の検出
     # Check if the current token is the root of a noun chunk in its sentence
-    current_token_is_np_root = False
-    for chunk in token.sent.noun_chunks: # Iterate over noun chunks in the current sentence
-        if token == chunk.root: # If the current token is the root of this chunk
-            current_token_is_np_root = True
-            if all(t.i not in processed_indices for t in chunk): # Ensure all tokens in chunk are unprocessed
-                np_element = SyntaxElement(chunk.text, "名詞句", get_noun_phrase_role(chunk.root), tokens=list(chunk), start_token_index=chunk.start)
-                for t in chunk:
-                    processed_indices.add(t.i)
-                return np_element
-            break # Found the chunk, no need to check other chunks for this token
-
-    if current_token_is_np_root: # If it was an NP root but already processed or not fully unprocessed
-        return None # Or handle appropriately, maybe it's part of a larger processed element
+    elif token.pos_ in ["NOUN", "PROPN", "PRON"]:
+        for chunk in token.sent.noun_chunks: # Iterate over noun chunks in the current sentence
+            if token == chunk.root: # If the current token is the root of this chunk
+                # Ensure all tokens in chunk are unprocessed before claiming it
+                if all(t.i not in processed_indices for t in chunk):
+                    element_tokens = list(chunk)
+                    element = SyntaxElement(get_span_text(element_tokens), "名詞句", get_noun_phrase_role(chunk.root), start_token_index=chunk.start)
+                break # Found the chunk, no need to check other chunks for this token
 
     # 4. 前置詞句 (Prepositional Phrases) の検出
-    if token.pos_ == "ADP" and token.dep_ == "prep":
-        pp_tokens = get_subtree_tokens(token)
-        pp_text = " ".join([t.text for t in pp_tokens])
-        
-        pp_element = SyntaxElement(pp_text, "前置詞句", get_prepositional_phrase_role(token), start_token_index=token.i)
-        for t in pp_tokens:
-            if t.i not in processed_indices:
-                child_element = build_syntax_tree(t, processed_indices)
-                if child_element:
-                    pp_element.children.append(child_element)
-        
-        for t in pp_tokens: processed_indices.add(t.i)
-        return pp_element
+    elif token.pos_ == "ADP" and token.dep_ == "prep":
+        element_tokens = get_subtree_tokens(token)
+        element = SyntaxElement(get_span_text(element_tokens), "前置詞句", get_prepositional_phrase_role(token), start_token_index=token.i)
 
     # 5. その他の単語 (Word) として処理
-    if token.i not in processed_indices:
-        processed_indices.add(token.i)
-        return SyntaxElement(token.text, "Word", tokens=[token], start_token_index=token.i)
+    if element is None: # If no larger element was identified
+        element_tokens = [token]
+        element = SyntaxElement(token.text, "Word", tokens=[token], start_token_index=token.i)
+
+    # Now, if an element was created, mark its tokens as processed and build its children
+    if element:
+        for t in element_tokens:
+            processed_indices.add(t.i) # Mark all tokens of this element as processed
+
+        # Recursively build children from tokens within this element's span
+        # This is the crucial part to avoid re-processing and infinite recursion
+        # Iterate through the tokens that *belong* to this element's span
+        for t in element_tokens:
+            # Only process children that are not yet processed and are not punctuation
+            # And ensure we don't try to process the current element's root token again as a child
+            if t.i != token.i and t.i not in processed_indices and t.pos_ != "PUNCT":
+                child_element = build_syntax_tree(t, processed_indices)
+                if child_element:
+                    element.children.append(child_element)
+        
+        # Sort children by their start index for consistent output
+        element.children.sort(key=lambda x: x.start_token_index)
+        
+        return element
     
     return None
 
@@ -237,39 +204,22 @@ def analyze_and_format_text(doc):
         sentence_element = SyntaxElement(sent.text, "文", "全体", start_token_index=sent.start)
         processed_indices = set()
         
-        # 文のルートから構文ツリーを構築
-        main_clause_root_element = build_syntax_tree(sent.root, processed_indices)
+        # Collect all top-level elements for this sentence
+        top_level_elements = []
         
-        if main_clause_root_element:
-            # 主節のテキストは文全体とするか、より正確に特定するかは要検討
-            main_clause_element = SyntaxElement(sent.text, "主節", "文の核", start_token_index=sent.start)
-            main_clause_element.children.append(main_clause_root_element)
-            sentence_element.children.append(main_clause_element)
-
-        # 文中の残りのトークンを処理し、未処理の要素（主に独立した従属節など）を追加
+        # Iterate through tokens in the sentence
         for token in sent:
-            if token.i not in processed_indices:
+            if token.i not in processed_indices and token.pos_ != "PUNCT":
+                # Try to build a syntax element from this token
                 element = build_syntax_tree(token, processed_indices)
                 if element:
-                    # 従属節は直接 sentence_element の子として追加
-                    if element.type == "従属節":
-                        sentence_element.children.append(element)
-                    else:
-                        # それ以外の要素は主節の子として追加 (主節が構築されている場合)
-                        if main_clause_element:
-                            main_clause_element.children.append(element)
-                        else:
-                            # 主節が構築されていない場合は文の直接の子として追加
-                            sentence_element.children.append(element)
+                    top_level_elements.append(element)
         
-        # 最終的な要素の順序を調整 (元の文の順序に近づける)
-        # sentence_elementの直接の子要素をソート
-        sentence_element.children.sort(key=lambda x: x.start_token_index)
+        # Sort top-level elements by their start index to maintain original order
+        top_level_elements.sort(key=lambda x: x.start_token_index)
         
-        # main_clause_elementの直接の子要素もソート (存在する場合)
-        if main_clause_element and main_clause_element.children:
-            main_clause_element.children.sort(key=lambda x: x.start_token_index)
-
+        # Add them as children of the sentence element
+        sentence_element.children.extend(top_level_elements)
         parsed_elements.append(sentence_element)
 
     return parsed_elements

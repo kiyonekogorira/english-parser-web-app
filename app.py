@@ -37,22 +37,18 @@ class SyntaxElement:
         indent = "  " * indent_level
         output = []
         
-        # クリック可能な要素としてHTMLを生成
-        # data-start-charとdata-end-charをカスタムデータ属性として追加
-        # JavaScript関数 highlightTextSpan(start, end) を呼び出す
-        header_html = f"<span class='syntax-element-clickable' onclick='highlightTextSpan({self.start_char}, {self.end_char})'>"
-        header_html += f"{indent}- <b>{self.type}</b>"
+        # ハイライト機能なしの純粋なテキスト表示
+        header_text = f"{indent}{self.type}"
         if self.role:
-            header_html += f" ({self.role})"
-        header_html += f": {self.text}</span>"
+            header_text += f" ({self.role})"
+        header_text += f": {self.text}"
 
         # 単語レベルの要素の場合は品詞も表示
         if self.type == "Word" and self.tokens:
             token_info = self.tokens[0]
-            header_html = f"<span class='syntax-element-clickable' onclick='highlightTextSpan({self.start_char}, {self.end_char})'>"
-            header_html += f"{indent}- <b>{self.type}</b>: {self.text} ({token_info.pos_} / {token_info.tag_})</span>"
+            header_text = f"{indent}{self.type}: {self.text} ({token_info.pos_} / {token_info.tag_})"
         
-        output.append(header_html)
+        output.append(header_text)
 
         for child in self.children:
             output.append(child.to_string(indent_level + 1))
@@ -229,66 +225,55 @@ def build_syntax_tree(token, processed_indices):
 def analyze_and_format_text(doc):
     parsed_elements = []
 
-    # Original text with spans for highlighting
-    highlightable_text = ""
-    for token in doc:
-        # Add a span around each token with its character offset as ID
-        highlightable_text += f"<span id='token-{token.idx}' class='original-token'>{token.text}</span>{token.whitespace_}"
-    st.markdown(f"<div id='original-text-container'>{highlightable_text}</div>", unsafe_allow_html=True)
-    st.markdown("""
-    <style>
-        .highlight { background-color: yellow; }
-        .original-token { cursor: pointer; }
-    </style>
-    <script>
-        function highlightTextSpan(startChar, endChar) {
-            // Remove existing highlights
-            document.querySelectorAll('.highlight').forEach(el => {
-                el.classList.remove('highlight');
-            });
-
-            // Apply new highlights
-            const container = document.getElementById('original-text-container');
-            if (!container) return;
-
-            let currentOffset = 0;
-            container.childNodes.forEach(node => {
-                if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('original-token')) {
-                    const tokenText = node.textContent;
-                    const tokenStart = currentOffset;
-                    const tokenEnd = currentOffset + tokenText.length;
-
-                    if (Math.max(startChar, tokenStart) < Math.min(endChar, tokenEnd)) {
-                        node.classList.add('highlight');
-                    }
-                    currentOffset = tokenEnd + (node.nextSibling && node.nextSibling.nodeType === Node.TEXT_NODE ? node.nextSibling.textContent.length : 0);
-                } else if (node.nodeType === Node.TEXT_NODE) {
-                    currentOffset += node.textContent.length;
-                }
-            });
-        }
-    </script>
-    """, unsafe_allow_html=True)
+    # Original text with spans for highlighting (removed for now)
+    # highlightable_text = ""
+    # for token in doc:
+    #     highlightable_text += f"<span id='token-{token.idx}' class='original-token'>{token.text}</span>{token.whitespace_}"
+    # st.markdown(f"<div id='original-text-container'>{highlightable_text}</div>", unsafe_allow_html=True)
+    # st.markdown("""
+    # <style>
+    #     .highlight { background-color: yellow; }
+    #     .original-token { cursor: pointer; }
+    # </style>
+    # <script>
+    #     function highlightTextSpan(startChar, endChar) {
+    #         document.querySelectorAll('.highlight').forEach(el => {
+    #             el.classList.remove('highlight');
+    #         });
+    #         const container = document.getElementById('original-text-container');
+    #         if (!container) return;
+    #         let currentOffset = 0;
+    #         container.childNodes.forEach(node => {
+    #             if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('original-token')) {
+    #                 const tokenText = node.textContent;
+    #                 const tokenStart = currentOffset;
+    #                 const tokenEnd = currentOffset + tokenText.length;
+    #                 if (Math.max(startChar, tokenStart) < Math.min(endChar, tokenEnd)) {
+    #                     node.classList.add('highlight');
+    #                 }
+    #                 currentOffset = tokenEnd + (node.nextSibling && node.nextSibling.nodeType === Node.TEXT_NODE ? node.nextSibling.textContent.length : 0);
+    #             } else if (node.nodeType === Node.TEXT_NODE) {
+    #                 currentOffset += node.textContent.length;
+    #             }
+    #         });
+    #     }
+    # </script>
+    # """, unsafe_allow_html=True)
 
     for sent in doc.sents:
-        sentence_element = SyntaxElement(sent.text, "文", "全体", start_token_index=sent.start, start_char=sent.start_char, end_char=sent.end_char)
+        sentence_element = SyntaxElement(sent.text, "文章全体", "", start_token_index=sent.start, start_char=sent.start_char, end_char=sent.end_char)
         processed_indices = set()
         
-        # Collect all top-level elements for this sentence
         top_level_elements = []
         
-        # Iterate through tokens in the sentence
         for token in sent:
             if token.i not in processed_indices and token.pos_ != "PUNCT":
-                # Try to build a syntax element from this token
                 element = build_syntax_tree(token, processed_indices)
                 if element:
                     top_level_elements.append(element)
         
-        # Sort top-level elements by their start index to maintain original order
         top_level_elements.sort(key=lambda x: x.start_token_index)
         
-        # Add them as children of the sentence element
         sentence_element.children.extend(top_level_elements)
         parsed_elements.append(sentence_element)
 
@@ -319,35 +304,32 @@ if st.button("解析実行"):
 
                 st.subheader("解析結果:")
                 
-                # フィルタリングオプション
-                all_element_types = sorted(list(set([el.type for sent_el in parsed_data for el in sent_el.children]))) # 全ての要素タイプを収集
+                # フィルタリングオプション (要素タイプを動的に取得)
+                all_element_types = sorted(list(set([el.type for sent_el in parsed_data for el in sent_el.children]))) 
                 selected_types = st.sidebar.multiselect(
                     "表示する要素タイプを選択",
                     options=all_element_types,
-                    default=all_element_types # デフォルトで全て選択
+                    default=all_element_types 
                 )
 
-                def filter_elements(elements, types_to_show):
+                def filter_elements_recursive(elements, types_to_show):
                     filtered = []
                     for el in elements:
-                        if el.type in types_to_show:
-                            filtered.append(el)
-                        # 子要素も再帰的にフィルタリング
-                        filtered_children = filter_elements(el.children, types_to_show)
-                        el.children = filtered_children # フィルタリングされた子要素で更新
+                        # 文要素自体は常に表示 (最上位の「文章全体」はフィルタリングしない)
+                        if el.type == "文章全体" or el.type in types_to_show:
+                            new_el = SyntaxElement(el.text, el.type, el.role, tokens=el.tokens, start_token_index=el.start_token_index, start_char=el.start_char, end_char=el.end_char)
+                            new_el.children = filter_elements_recursive(el.children, types_to_show)
+                            # 子要素がフィルタリングされて空になった場合、親要素も表示しないか検討
+                            # ここでは親要素は表示し、子要素が空になるだけ
+                            filtered.append(new_el)
                     return filtered
 
                 # フィルタリングを適用
-                filtered_parsed_data = []
-                for sent_el in parsed_data:
-                    # 文要素自体は常に表示
-                    new_sent_el = SyntaxElement(sent_el.text, sent_el.type, sent_el.role, tokens=sent_el.tokens, start_token_index=sent_el.start_token_index, start_char=sent_el.start_char, end_char=sent_el.end_char)
-                    new_sent_el.children = filter_elements(sent_el.children, selected_types)
-                    filtered_parsed_data.append(new_sent_el)
+                filtered_parsed_data = filter_elements_recursive(parsed_data, selected_types)
 
                 for element in filtered_parsed_data:
                     with st.expander(f"**{element.type}:** {element.text}", expanded=True):
-                        st.markdown(element.to_string(indent_level=0), unsafe_allow_html=True)
+                        st.markdown(element.to_string(indent_level=0))
 
         except Exception as e:
             st.error(

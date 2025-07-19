@@ -21,7 +21,7 @@ def load_model():
 
 nlp = load_model()
 
-# --- 構文要素を保持するデータ構造 --- (フェーズ1, ステップ3)
+# --- 構文要素を保持するデータ構造 ---
 class SyntaxElement:
     def __init__(self, text, type, role="", children=None, tokens=None):
         self.text = text
@@ -48,92 +48,213 @@ class SyntaxElement:
             output.append(child.to_string(indent_level + 1))
         return "\n".join(output)
 
-# --- 解析ロジック --- (フェーズ1, ステップ3)
+# --- 役割推定の補助関数 ---
+def get_noun_phrase_role(root_token):
+    if root_token.dep_ == "nsubj": return "主語"
+    if root_token.dep_ == "dobj": return "直接目的語"
+    if root_token.dep_ == "pobj": return "前置詞の目的語"
+    if root_token.dep_ == "attr": return "補語"
+    if root_token.dep_ == "oprd": return "目的語補語"
+    if root_token.dep_ == "appos": return "同格"
+    if root_token.dep_ == "npadvmod": return "副詞的修飾 (名詞句)"
+    return "名詞句"
+
+def get_prepositional_phrase_role(prep_token):
+    head = prep_token.head
+    if head.pos_ == "VERB":
+        if prep_token.text.lower() in ["in", "on", "at", "from", "to", "near"]: return "副詞的修飾 (場所)"
+        if prep_token.text.lower() in ["after", "before", "during", "until", "since"]: return "副詞的修飾 (時)"
+        if prep_token.text.lower() in ["with", "by"]: return "副詞的修飾 (手段/方法)"
+        if prep_token.text.lower() in ["for", "about"]: return "副詞的修飾 (目的/対象)"
+    elif head.pos_ in ["NOUN", "PROPN"]:
+        return "形容詞的修飾 (名詞)"
+    return "前置詞句"
+
+def get_verb_phrase_role(verb_token):
+    if verb_token.dep_ == "ROOT": return "述語 (主動詞)"
+    if verb_token.dep_ == "xcomp": return "目的語補語 (不定詞/分詞)"
+    if verb_token.dep_ == "ccomp": return "補文節 (名詞節)"
+    if verb_token.dep_ == "advcl": return "副詞節"
+    if verb_token.dep_ == "acl": return "形容詞節"
+    return "述語"
+
+def get_clause_role(clause_root_token):
+    if clause_root_token.dep_ == "advcl":
+        if clause_root_token.text.lower() in ["because", "since", "as"]: return "原因・理由"
+        if clause_root_token.text.lower() in ["although", "though", "even though"]: return "譲歩"
+        if clause_root_token.text.lower() in ["when", "while", "after", "before"]: return "時"
+        if clause_root_token.text.lower() in ["if", "unless"]: return "条件"
+        return "副詞節"
+    if clause_root_token.dep_ == "acl" or clause_root_token.dep_ == "relcl": return "形容詞節"
+    if clause_root_token.dep_ == "ccomp": return "名詞節 (補文)"
+    if clause_root_token.dep_ == "xcomp": return "名詞節 (開補文)"
+    return "節"
+
+# --- ヘルパー関数 ---
+def get_span_text(span):
+    return span.text
+
+def get_subtree_tokens(token):
+    return sorted([t for t in token.subtree], key=lambda t: t.i)
+
+# --- 依存ツリーを再帰的に走査し、構文要素を構築する関数 ---
+def build_syntax_tree(token, processed_indices):
+    if token.i in processed_indices or token.pos_ == "PUNCT":
+        processed_indices.add(token.i)
+        return None
+
+    # 1. 従属節 (Subordinate Clauses) の検出を最優先
+    if token.dep_ in ["advcl", "acl", "ccomp", "xcomp", "relcl"] or \
+       (token.pos_ == "SCONJ" and token.dep_ == "mark") or \
+       (token.pos_ == "PRON" and token.dep_ == "nsubj" and token.head.dep_ == "relcl"): # 関係代名詞
+        
+        clause_tokens = get_subtree_tokens(token)
+        clause_text = " ".join([t.text for t in clause_tokens])
+        
+        clause_type = "従属節"
+        clause_role = get_clause_role(token)
+
+        clause_element = SyntaxElement(clause_text, clause_type, clause_role)
+        
+        for child in token.children:
+            child_element = build_syntax_tree(child, processed_indices)
+            if child_element:
+                clause_element.children.append(child_element)
+        
+        for t in clause_tokens:
+            processed_indices.add(t.i)
+        return clause_element
+
+    # 2. 不定詞句 / 分詞構文 の検出 (動詞がルートの場合)
+    if token.pos_ == "VERB" or token.pos_ == "AUX":
+        vp_type = "動詞句"
+        vp_role = get_verb_phrase_role(token)
+        
+        is_infinitive = False
+        to_token = None
+        if (token.dep_ in ["xcomp", "ccomp"]) and \
+           any(child.text.lower() == "to" and child.pos_ == "PART" for child in token.children):
+            is_infinitive = True
+            to_token = next((child for child in token.children if child.text.lower() == "to" and child.pos_ == "PART"), None)
+
+        if is_infinitive and to_token:
+            vp_type = "不定詞句"
+            infinitive_tokens = get_subtree_tokens(token) # 動詞のsubtree
+            infinitive_tokens.insert(0, to_token) # 'to' を先頭に追加
+            infinitive_tokens = sorted(list(set(infinitive_tokens)), key=lambda t: t.i) # 重複削除とソート
+            
+            infinitive_text = " ".join([t.text for t in infinitive_tokens])
+            vp_element = SyntaxElement(infinitive_text, vp_type, vp_role)
+            
+            for t in infinitive_tokens:
+                if t.i not in processed_indices:
+                    child_element = build_syntax_tree(t, processed_indices)
+                    if child_element:
+                        vp_element.children.append(child_element)
+            
+            for t in infinitive_tokens: processed_indices.add(t.i)
+            return vp_element
+
+        if (token.pos_ == "VERB" and (token.tag_ == "VBG" or token.tag_ == "VBN")) and \
+           (token.dep_ in ["acl", "advcl"]):
+            vp_type = "分詞構文"
+            participle_tokens = get_subtree_tokens(token)
+            participle_text = " ".join([t.text for t in participle_tokens])
+            vp_element = SyntaxElement(participle_text, vp_type, vp_role)
+            
+            for t in participle_tokens:
+                if t.i not in processed_indices:
+                    child_element = build_syntax_tree(t, processed_indices)
+                    if child_element:
+                        vp_element.children.append(child_element)
+            
+            for t in participle_tokens: processed_indices.add(t.i)
+            return vp_element
+
+        # 一般的な動詞句
+        vp_tokens = [token]
+        for child in token.children:
+            if child.i not in processed_indices and child.pos_ != "PUNCT":
+                vp_tokens.append(child)
+        
+        vp_tokens = sorted(vp_tokens, key=lambda t: t.i)
+        vp_text = " ".join([t.text for t in vp_tokens])
+        
+        vp_element = SyntaxElement(vp_text, vp_type, vp_role)
+        for t in vp_tokens:
+            if t.i not in processed_indices:
+                child_element = build_syntax_tree(t, processed_indices)
+                if child_element:
+                    vp_element.children.append(child_element)
+        
+        for t in vp_tokens: processed_indices.add(t.i)
+        return vp_element
+
+    # 3. 名詞句 (Noun Phrases) の検出 (noun_chunksを優先)
+    for chunk in token.doc.noun_chunks:
+        if token.i >= chunk.start and token.i < chunk.end and token.root == chunk.root:
+            if all(t.i not in processed_indices for t in chunk):
+                np_element = SyntaxElement(chunk.text, "名詞句", get_noun_phrase_role(chunk.root))
+                for t in chunk:
+                    np_element.children.append(SyntaxElement(t.text, "Word", tokens=[t]))
+                    processed_indices.add(t.i)
+                return np_element
+
+    # 4. 前置詞句 (Prepositional Phrases) の検出
+    if token.pos_ == "ADP" and token.dep_ == "prep":
+        pp_tokens = get_subtree_tokens(token)
+        pp_text = " ".join([t.text for t in pp_tokens])
+        
+        pp_element = SyntaxElement(pp_text, "前置詞句", get_prepositional_phrase_role(token))
+        for t in pp_tokens:
+            if t.i not in processed_indices:
+                child_element = build_syntax_tree(t, processed_indices)
+                if child_element:
+                    pp_element.children.append(child_element)
+        
+        for t in pp_tokens: processed_indices.add(t.i)
+        return pp_element
+
+    # 5. その他の単語 (Word) として処理
+    if token.i not in processed_indices:
+        processed_indices.add(token.i)
+        return SyntaxElement(token.text, "Word", tokens=[token])
+    
+    return None
+
+# --- メインの解析ロジック ---
 def analyze_and_format_text(doc):
     parsed_elements = []
 
     for sent in doc.sents:
-        # 節の特定 (簡易版: 各文を節として扱う)
-        clause_type = "主節"
-        clause_role = ""
-
-        # 簡易的な従属節の識別
-        if sent[0].pos_ == "SCONJ" or sent[0].dep_ == "mark":
-            clause_type = "従属節"
-            if sent[0].text.lower() in ["because", "since", "as"]:
-                clause_role = "原因・理由"
-            elif sent[0].text.lower() in ["although", "though", "even though"]:
-                clause_role = "譲歩"
-            elif sent[0].text.lower() in ["when", "while", "after", "before"]:
-                clause_role = "時"
-            elif sent[0].text.lower() in ["if", "unless"]:
-                clause_role = "条件"
-            elif sent[0].text.lower() in ["who", "which", "that"]:
-                clause_role = "修飾 (形容詞節)"
-            elif sent[0].text.lower() in ["what", "where", "how"]:
-                clause_role = "名詞節"
+        sentence_element = SyntaxElement(sent.text, "文", "全体")
+        processed_indices = set()
         
-        clause_element = SyntaxElement(sent.text, clause_type, clause_role)
+        # 文のルートから構文ツリーを構築
+        main_clause_root_element = build_syntax_tree(sent.root, processed_indices)
+        
+        if main_clause_root_element:
+            main_clause_element = SyntaxElement(sent.text, "主節", "文の核")
+            main_clause_element.children.append(main_clause_root_element)
+            sentence_element.children.append(main_clause_element)
 
-        # 句の特定と役割の付与
-        processed_tokens = set()
-
-        # 1. 名詞句の処理
-        for chunk in sent.noun_chunks:
-            role = ""
-            if chunk.root.dep_ == "nsubj": role = "主語"
-            elif chunk.root.dep_ == "dobj": role = "直接目的語"
-            elif chunk.root.dep_ == "pobj": role = "前置詞の目的語"
-            elif chunk.root.dep_ == "attr": role = "補語"
-            elif chunk.root.dep_ == "oprd": role = "目的語補語"
-            
-            np_element = SyntaxElement(chunk.text, "名詞句", role)
-            for token in chunk:
-                np_element.children.append(SyntaxElement(token.text, "Word", tokens=[token]))
-                processed_tokens.add(token.i)
-            clause_element.children.append(np_element)
-
-        # 2. 動詞句の処理 (簡易版)
-        # 文のルート動詞を探し、その動詞と直接の子孫の一部を動詞句とする
-        verbs = [token for token in sent if token.pos_ == "VERB" or token.pos_ == "AUX"]
-        for verb in verbs:
-            if verb.i not in processed_tokens: # 既に名詞句の一部として処理されていないか確認
-                vp_tokens = [verb] + [child for child in verb.children if child.pos_ != "PUNCT" and child.i not in processed_tokens]
-                vp_text = " ".join([t.text for t in sorted(vp_tokens, key=lambda t: t.i)])
-                
-                vp_element = SyntaxElement(vp_text, "動詞句", "述語")
-                for token in sorted(vp_tokens, key=lambda t: t.i):
-                    if token.i not in processed_tokens: # 重複を避ける
-                        vp_element.children.append(SyntaxElement(token.text, "Word", tokens=[token]))
-                        processed_tokens.add(token.i)
-                clause_element.children.append(vp_element)
-
-        # 3. 前置詞句の処理
-        preps = [token for token in sent if token.pos_ == "ADP" and token.dep_ == "prep"]
-        for prep in preps:
-            if prep.i not in processed_tokens: # 既に処理されていないか確認
-                pp_tokens = [prep] + [child for child in prep.children if child.dep_ == "pobj" and child.i not in processed_tokens]
-                pp_text = " ".join([t.text for t in sorted(pp_tokens, key=lambda t: t.i)])
-                
-                pp_role = "修飾語"
-                if prep.head.pos_ == "VERB":
-                    if prep.text.lower() in ["in", "on", "at", "from", "to"]: pp_role = "副詞的修飾 (場所)"
-                    elif prep.text.lower() in ["after", "before", "during"]: pp_role = "副詞的修飾 (時)"
-                elif prep.head.pos_ in ["NOUN", "PROPN"]: pp_role = "形容詞的修飾"
-
-                pp_element = SyntaxElement(pp_text, "前置詞句", pp_role)
-                for token in sorted(pp_tokens, key=lambda t: t.i):
-                    if token.i not in processed_tokens: # 重複を避ける
-                        pp_element.children.append(SyntaxElement(token.text, "Word", tokens=[token]))
-                        processed_tokens.add(token.i)
-                clause_element.children.append(pp_element)
-
-        # 4. その他の未処理の単語 (接続詞、副詞など) を追加
+        # 文中の残りのトークンを処理し、未処理の要素（主に独立した従属節など）を追加
         for token in sent:
-            if token.i not in processed_tokens and token.pos_ != "PUNCT": # 句読点は除外
-                clause_element.children.append(SyntaxElement(token.text, "Word", tokens=[token]))
-
-        parsed_elements.append(clause_element)
+            if token.i not in processed_indices:
+                element = build_syntax_tree(token, processed_indices)
+                if element:
+                    if element.type == "従属節":
+                        sentence_element.children.append(element)
+                    else:
+                        if main_clause_element:
+                            main_clause_element.children.append(element)
+                        else:
+                            sentence_element.children.append(element)
+        
+        # 最終的な要素の順序を調整 (元の文の順序に近づける)
+        sentence_element.children.sort(key=lambda x: x.tokens[0].i if x.tokens else 0)
+        
+        parsed_elements.append(sentence_element)
 
     return parsed_elements
 
@@ -147,7 +268,7 @@ user_input = st.text_area(
     "英文を入力",
     "",
     height=150,
-    placeholder="例: The quick brown fox jumps over the lazy dog."
+    placeholder="例: The quick brown fox jumps over the lazy dog. Having finished his work, he went home. She wants to learn English."
 )
 
 # --- 解析実行ボタン ---
@@ -161,10 +282,9 @@ if st.button("解析実行"):
                 parsed_data = analyze_and_format_text(doc)
 
                 st.subheader("解析結果:")
-                # UI/UXの改善 (MVPレベル) - st.expanderと階層表示
                 for element in parsed_data:
-                    with st.expander(f"**{element.type} ({element.role}):** {element.text}", expanded=True): # 初期は展開
-                        st.markdown(element.to_string(indent_level=0)) # to_string内でインデントを処理
+                    with st.expander(f"**{element.type}:** {element.text}", expanded=True):
+                        st.markdown(element.to_string(indent_level=0))
 
         except Exception as e:
             st.error(

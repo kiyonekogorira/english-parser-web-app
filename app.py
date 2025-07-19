@@ -225,41 +225,6 @@ def build_syntax_tree(token, processed_indices):
 def analyze_and_format_text(doc):
     parsed_elements = []
 
-    # Original text with spans for highlighting (removed for now)
-    # highlightable_text = ""
-    # for token in doc:
-    #     highlightable_text += f"<span id='token-{token.idx}' class='original-token'>{token.text}</span>{token.whitespace_}"
-    # st.markdown(f"<div id='original-text-container'>{highlightable_text}</div>", unsafe_allow_html=True)
-    # st.markdown("""
-    # <style>
-    #     .highlight { background-color: yellow; }
-    #     .original-token { cursor: pointer; }
-    # </style>
-    # <script>
-    #     function highlightTextSpan(startChar, endChar) {
-    #         document.querySelectorAll('.highlight').forEach(el => {
-    #             el.classList.remove('highlight');
-    #         });
-    #         const container = document.getElementById('original-text-container');
-    #         if (!container) return;
-    #         let currentOffset = 0;
-    #         container.childNodes.forEach(node => {
-    #             if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('original-token')) {
-    #                 const tokenText = node.textContent;
-    #                 const tokenStart = currentOffset;
-    #                 const tokenEnd = currentOffset + tokenText.length;
-    #                 if (Math.max(startChar, tokenStart) < Math.min(endChar, tokenEnd)) {
-    #                     node.classList.add('highlight');
-    #                 }
-    #                 currentOffset = tokenEnd + (node.nextSibling && node.nextSibling.nodeType === Node.TEXT_NODE ? node.nextSibling.textContent.length : 0);
-    #             } else if (node.nodeType === Node.TEXT_NODE) {
-    #                 currentOffset += node.textContent.length;
-    #             }
-    #         });
-    #     }
-    # </script>
-    # """, unsafe_allow_html=True)
-
     for sent in doc.sents:
         sentence_element = SyntaxElement(sent.text, "文章全体", "", start_token_index=sent.start, start_char=sent.start_char, end_char=sent.end_char)
         processed_indices = set()
@@ -305,31 +270,31 @@ if st.button("解析実行"):
                 st.subheader("解析結果:")
                 
                 # フィルタリングオプション (要素タイプを動的に取得)
-                all_element_types = sorted(list(set([el.type for sent_el in parsed_data for el in sent_el.children]))) 
-                selected_types = st.sidebar.multiselect(
-                    "表示する要素タイプを選択",
-                    options=all_element_types,
-                    default=all_element_types 
-                )
+                # フィルタリングオプションを削除したため、この部分はコメントアウトまたは削除
+                # all_element_types = sorted(list(set([el.type for sent_el in parsed_data for el in sent_el.children]))) 
+                # selected_types = st.sidebar.multiselect(
+                #     "表示する要素タイプを選択",
+                #     options=all_element_types,
+                #     default=all_element_types 
+                # )
 
-                def filter_elements_recursive(elements, types_to_show):
-                    filtered = []
-                    for el in elements:
-                        # 文要素自体は常に表示 (最上位の「文章全体」はフィルタリングしない)
-                        if el.type == "文章全体" or el.type in types_to_show:
-                            new_el = SyntaxElement(el.text, el.type, el.role, tokens=el.tokens, start_token_index=el.start_token_index, start_char=el.start_char, end_char=el.end_char)
-                            new_el.children = filter_elements_recursive(el.children, types_to_show)
-                            # 子要素がフィルタリングされて空になった場合、親要素も表示しないか検討
-                            # ここでは親要素は表示し、子要素が空になるだけ
-                            filtered.append(new_el)
-                    return filtered
+                # def filter_elements_recursive(elements, types_to_show):
+                #     filtered = []
+                #     for el in elements:
+                #         if el.type == "文章全体" or el.type in types_to_show:
+                #             new_el = SyntaxElement(el.text, el.type, el.role, tokens=el.tokens, start_token_index=el.start_token_index, start_char=el.start_char, end_char=el.end_char)
+                #             new_el.children = filter_elements_recursive(el.children, types_to_show)
+                #             filtered.append(new_el)
+                #     return filtered
 
-                # フィルタリングを適用
-                filtered_parsed_data = filter_elements_recursive(parsed_data, selected_types)
+                # フィルタリングを適用 (フィルタリングオプションを削除したため、直接parsed_dataを使用)
+                # filtered_parsed_data = filter_elements_recursive(parsed_data, selected_types)
+                filtered_parsed_data = parsed_data
 
                 for element in filtered_parsed_data:
                     with st.expander(f"**{element.type}:** {element.text}", expanded=True):
-                        st.markdown(element.to_string(indent_level=0))
+                        # ここでto_stringの出力をコードブロックとして表示
+                        st.markdown(f"```\n{element.to_string(indent_level=0)}\n```")
 
         except Exception as e:
             st.error(

@@ -46,7 +46,7 @@ class SyntaxElement:
         # 単語レベルの要素の場合は品詞も表示
         if self.type == "Word" and self.tokens:
             token_info = self.tokens[0]
-            header_text = f"{indent}{self.type}: {self.text} ({token_info.pos_} / {token_info.tag_})"
+            header_text = f"{indent}{self.text}: {token_info.pos_} ({token_info.tag_})"
         
         output.append(header_text)
 
@@ -80,7 +80,7 @@ def get_prepositional_phrase_role(prep_token):
 
 def get_verb_phrase_role(verb_token):
     if verb_token.dep_ == "ROOT":
-        if verb_token.lemma_ in ["be", "seem", "become", "appear", "feel", "look", "sound", "taste", "smell", "grow", "remain", "stay", "turn"]:
+        if verb_token.lemma_ in ["be", "seem", "become", "appear", "feel", "look", "sound", "taste", "smell", "grow", "remain", "stay", "turn"]: 
             return "述語 (連結動詞)"
         return "述語 (主動詞)"
     if verb_token.dep_ == "xcomp": return "述語 (開補文)"
@@ -229,17 +229,51 @@ def analyze_and_format_text(doc):
         sentence_element = SyntaxElement(sent.text, "文章全体", "", start_token_index=sent.start, start_char=sent.start_char, end_char=sent.end_char)
         processed_indices = set()
         
-        top_level_elements = []
-        
+        # 主節と従属節を明示的に構築
+        main_clause_tokens = []
+        sub_clause_elements = []
+
+        # まず従属節を抽出し、残りを主節とする
+        temp_processed_for_clauses = set()
         for token in sent:
+            if token.i not in temp_processed_for_clauses and token.pos_ != "PUNCT":
+                # 従属節のルートとなるトークンを探す
+                if token.dep_ in ["advcl", "acl", "ccomp", "xcomp", "relcl"] or \
+                   (token.pos_ == "SCONJ" and token.dep_ == "mark") or \
+                   (token.pos_ == "PRON" and token.dep_ == "nsubj" and token.head.dep_ == "relcl"): # 関係代名詞
+                    sub_clause_element = build_syntax_tree(token, temp_processed_for_clauses)
+                    if sub_clause_element:
+                        sub_clause_elements.append(sub_clause_element)
+                else:
+                    # 従属節でないトークンは主節の候補
+                    main_clause_tokens.append(token)
+                    temp_processed_for_clauses.add(token.i)
+        
+        # 主節の構築
+        main_clause_text = get_span_text(sorted(main_clause_tokens, key=lambda t: t.i)) if main_clause_tokens else ""
+        main_clause_element = SyntaxElement(main_clause_text, "主節", "", 
+                                            start_token_index=main_clause_tokens[0].i if main_clause_tokens else -1,
+                                            start_char=main_clause_tokens[0].idx if main_clause_tokens else -1,
+                                            end_char=main_clause_tokens[-1].idx + len(main_clause_tokens[-1].text) if main_clause_tokens else -1)
+        
+        # 主節内部の要素を構築
+        for token in sorted(main_clause_tokens, key=lambda t: t.i):
             if token.i not in processed_indices and token.pos_ != "PUNCT":
                 element = build_syntax_tree(token, processed_indices)
                 if element:
-                    top_level_elements.append(element)
+                    main_clause_element.children.append(element)
         
-        top_level_elements.sort(key=lambda x: x.start_token_index)
+        # 主節の子要素をソート
+        main_clause_element.children.sort(key=lambda x: x.start_token_index)
+
+        sentence_element.children.append(main_clause_element)
+
+        # 従属節を追加
+        for sub_el in sorted(sub_clause_elements, key=lambda x: x.start_token_index):
+            sentence_element.children.append(sub_el)
         
-        sentence_element.children.extend(top_level_elements)
+        # 最終的な要素の順序を調整 (元の文の順序に近づける)
+        sentence_element.children.sort(key=lambda x: x.start_token_index)
         parsed_elements.append(sentence_element)
 
     return parsed_elements
@@ -269,26 +303,7 @@ if st.button("解析実行"):
 
                 st.subheader("解析結果:")
                 
-                # フィルタリングオプション (要素タイプを動的に取得)
-                # フィルタリングオプションを削除したため、この部分はコメントアウトまたは削除
-                # all_element_types = sorted(list(set([el.type for sent_el in parsed_data for el in sent_el.children]))) 
-                # selected_types = st.sidebar.multiselect(
-                #     "表示する要素タイプを選択",
-                #     options=all_element_types,
-                #     default=all_element_types 
-                # )
-
-                # def filter_elements_recursive(elements, types_to_show):
-                #     filtered = []
-                #     for el in elements:
-                #         if el.type == "文章全体" or el.type in types_to_show:
-                #             new_el = SyntaxElement(el.text, el.type, el.role, tokens=el.tokens, start_token_index=el.start_token_index, start_char=el.start_char, end_char=el.end_char)
-                #             new_el.children = filter_elements_recursive(el.children, types_to_show)
-                #             filtered.append(new_el)
-                #     return filtered
-
-                # フィルタリングを適用 (フィルタリングオプションを削除したため、直接parsed_dataを使用)
-                # filtered_parsed_data = filter_elements_recursive(parsed_data, selected_types)
+                # フィルタリングオプションは削除済み
                 filtered_parsed_data = parsed_data
 
                 for element in filtered_parsed_data:

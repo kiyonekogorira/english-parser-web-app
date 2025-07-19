@@ -318,7 +318,34 @@ if st.button("解析実行"):
                 parsed_data = analyze_and_format_text(doc)
 
                 st.subheader("解析結果:")
-                for element in parsed_data:
+                
+                # フィルタリングオプション
+                all_element_types = sorted(list(set([el.type for sent_el in parsed_data for el in sent_el.children]))) # 全ての要素タイプを収集
+                selected_types = st.sidebar.multiselect(
+                    "表示する要素タイプを選択",
+                    options=all_element_types,
+                    default=all_element_types # デフォルトで全て選択
+                )
+
+                def filter_elements(elements, types_to_show):
+                    filtered = []
+                    for el in elements:
+                        if el.type in types_to_show:
+                            filtered.append(el)
+                        # 子要素も再帰的にフィルタリング
+                        filtered_children = filter_elements(el.children, types_to_show)
+                        el.children = filtered_children # フィルタリングされた子要素で更新
+                    return filtered
+
+                # フィルタリングを適用
+                filtered_parsed_data = []
+                for sent_el in parsed_data:
+                    # 文要素自体は常に表示
+                    new_sent_el = SyntaxElement(sent_el.text, sent_el.type, sent_el.role, tokens=sent_el.tokens, start_token_index=sent_el.start_token_index, start_char=sent_el.start_char, end_char=sent_el.end_char)
+                    new_sent_el.children = filter_elements(sent_el.children, selected_types)
+                    filtered_parsed_data.append(new_sent_el)
+
+                for element in filtered_parsed_data:
                     with st.expander(f"**{element.type}:** {element.text}", expanded=True):
                         st.markdown(element.to_string(indent_level=0), unsafe_allow_html=True)
 

@@ -1,37 +1,59 @@
-プロジェクト名: 英文構造解析Webアプリ
-1. 技術的なアーキテクチャ
-Streamlitアプリケーション: すべてのUIと基本的なロジックをPythonとStreamlitで実装する。
-自然言語処理 (NLP) ライブラリ: 英文解析の中核として、spaCyまたはNLTKなどのPython NLPライブラリを利用する。特に構文解析（Dependency Parsing / Constituency Parsing）機能が重要となる。
-表示ロジック: 解析結果（句の範囲、主語/動詞の位置）に基づいて、元のテキストをHTML/Markdown形式で整形し、Streamlitのst.markdownで表示する。カスタムCSSで色付けや括弧のスタイルを適用する。
+# 英文構文解析・強調表示 Web アプリ - 設計書
 
-2. 使用する技術スタック候補
-フレームワーク: Streamlit
-言語: Python
-NLPライブラリ: spaCy (高性能な構文解析モデルが利用可能) または NLTK (より低レベルな制御が可能)
-UI/UX: Streamlitの標準ウィジェット、カスタムCSS (st.markdownで埋め込み)
-デプロイ: Streamlit Community Cloud / Render / Heroku など
+## 1. 技術的なアーキテクチャ
 
-3. 主要なコンポーネントとその役割 (Streamlitのセクション/関数/ウィジェットとして)
-メインアプリ (app.py):
-役割: アプリケーション全体のレイアウト、テキスト入力エリア、解析結果表示エリアの制御。
-Streamlitウィジェット: st.text_area, st.button, st.empty (結果表示用)
+### 1.1. 全体構成
+* **Streamlitアプリケーション:** すべてのUIとロジックをPythonとStreamlitで実装する。
+* **NLPライブラリ:** 自然言語処理（NLP）の中核としてspaCyを使用し、英文の構文解析、品詞タグ付け、固有表現認識（必要に応じて）を行う。
+* **バックエンド処理:** StreamlitのサーバーサイドでspaCyモデルをロードし、入力された英文の解析を実行する。解析結果はHTML形式に整形され、Streamlitの`st.markdown`機能で表示される。
 
-SentenceAnalyzer クラス/関数:
-役割: 入力された英文を受け取り、NLPライブラリを用いて構文解析を実行する。名詞句、動詞句、主語、動詞などの情報を抽出する。
-依存関係解析 (Dependency Parsing) または句構造解析 (Constituency Parsing) を利用する。
+## 2. 使用する技術スタック
 
-ResultFormatter クラス/関数:
-役割: SentenceAnalyzerから得られた解析結果（句の開始/終了位置、主語/動詞の位置）を基に、元の英文をHTML/Markdown形式の文字列に変換する。
-例: <span style="color:red;">Subject</span> <span style="color:blue;">Verb</span> [NP ... ] (VP ... )
+*   **フレームワーク:** Streamlit
+*   **言語:** Python
+*   **NLPライブラリ:** spaCy (英語モデル 'en_core_web_sm' または 'en_core_web_md')
+*   **UI/UX:** Streamlitの標準ウィジェット、および`st.markdown`でカスタムCSSを適用し、名詞句・動詞句の括弧表示や主語・動詞の色付けを実現する。
+*   **デプロイ:** Streamlit Community Cloud / Render / Heroku など
 
-SessionStateManagement:
-役割: ユーザーの入力テキストや解析結果をセッション間で保持する必要がある場合、st.session_stateを利用する。
+## 3. 主要なコンポーネントとその役割
 
-4. データモデルの概要 (Streamlitのセッションステート内)
-st.session_state['input_text']: string (ユーザーが入力した英文)
-st.session_state['parsed_result']: dict (解析結果を格納。例: {'subject_span': (start, end), 'verb_span': (start, end), 'phrases': [{'type': 'NP', 'span': (start, end)}, ...]})
-st.session_state['display_html']: string (整形されたHTML/Markdown文字列)
+### 3.1. メインアプリ (`app.py`)
+*   **役割:** アプリケーション全体のレイアウト、テキスト入力エリア、解析実行ボタン、結果表示エリアを制御する。**オンボーディング、ヘルプ、フィードバックメッセージの表示も担当する。**
+*   **Streamlitウィジェット:** `st.text_area`, `st.button`, `st.markdown`, `st.empty` (結果表示用)
 
-5. NLPライブラリの選定とモデル
-spaCyを使用する場合: en_core_web_sm (または md/lg モデル) を利用し、doc.noun_chunks, doc.ents, doc.dep_ (依存関係) などを活用して句や主語/動詞を特定する。
-NLTKを使用する場合: nltk.pos_tag, nltk.chunk.regexp.RegexpParser や nltk.tree.Tree を用いて句構造を解析する。
+### 3.2. `SentenceAnalyzer` クラス/ロジック
+*   **役割:** spaCyモデルのロード、入力テキストの解析、名詞句・動詞句の抽出、主語・動詞の特定を行う。
+*   **詳細:** spaCyの`Doc`オブジェクト、`Span`オブジェクト、依存関係解析 (`dep_`) を利用して、構文情報を取得する。**複数文の分割と各文の解析、複雑な構文パターンへの対応ロジックもここに含める。**
+
+### 3.3. `ResultFormatter` クラス/ロジック
+*   **役割:** `SentenceAnalyzer`で得られた解析結果を、ユーザーに視覚的に分かりやすいHTML/Markdown形式に整形する。
+*   **詳細:**
+    *   名詞句、動詞句に括弧を挿入する処理。
+    *   主語と動詞に特定のCSSスタイル（色）を適用するためのHTMLタグ（例: `<span>`）を挿入する処理。
+    *   **句のネスト表示の改善**: ネストの深さに応じた括弧の種類や色、インデントなどを考慮した表示ロジック。
+    *   **視覚表現の多様性**: 色付けだけでなく、太字、下線、背景色など、複数の強調スタイルを組み合わせるオプションに対応するためのロジック。
+
+### 3.4. UIウィジェット
+*   `st.text_area`: ユーザーが英文を入力するための複数行テキストエリア。**入力バリデーション（英文判定など）のフィードバック表示も考慮する。**
+*   `st.button`: 「解析実行」ボタンと「クリア」ボタン。
+*   `st.markdown`: 解析された結果（HTML形式）を表示するためのエリア。`unsafe_allow_html=True` を使用する。**インタラクティブな表示（マウスオーバー時のツールチップなど）や表示オプション（表示レベル、元の文との切り替え）に対応するための拡張を検討する。**
+
+## 4. データモデルの概要 (Streamlitのセッションステート内)
+
+*   `st.session_state['input_text']`: `string` (ユーザーが入力した英文の生データ)
+*   `st.session_state['parsed_html_result']`: `string` (整形され、HTMLタグが含まれた解析結果の文字列)
+*   `st.session_state['spacy_doc']`: spaCyの`Doc`オブジェクト (解析済みドキュメント。デバッグや詳細表示の際に利用可能だが、直接表示はしない)
+*   `st.session_state['is_analyzed']`: `boolean` (解析が一度実行されたかどうかのフラグ。結果表示の制御に利用)
+*   **`st.session_state['analysis_options']`**: `dict` (ユーザーが選択した解析オプションや表示スタイル設定を保持)
+*   **`st.session_state['messages']`**: `list` (ユーザーへのフィードバックメッセージを保持)
+
+## 5. JavaScript連携の可能性
+
+*   **現時点:** StreamlitとPython/spaCyの機能で要件を満たすことが可能であり、JavaScript連携は必須ではない。
+*   **将来的な検討:** より高度なインタラクティブな表示（例: マウスオーバーで品詞や依存関係の詳細を表示）が必要になった場合に、Streamlit Custom Components を用いたJavaScript連携を検討する。
+
+## 6. コード構造と品質
+
+*   **モジュール化**: `SentenceAnalyzer`や`ResultFormatter`などのクラスを独立したPythonファイルに分割し、`app.py`はUIとメインロジックに徹する。
+*   **コーディング規約**: PEP 8に準拠し、`Black`、`isort`、`Flake8`などのツールを導入してコード品質を維持する。
+*   **テスト**: `pytest`を用いたユニットテストを導入し、主要なロジックの動作を保証する。

@@ -14,10 +14,17 @@ def load_model():
     try:
         nlp = spacy.load("en_core_web_sm")
         return nlp
-    except OSError:
-        st.error("spaCyモデル 'en_core_web_sm' が見つかりません。")
-        st.info("コマンドラインで 'python -m spacy download en_core_web_sm' を実行してインストールしてください。")
-        st.stop()
+    except OSError: # モデルが見つからない場合
+        st.info("spaCyモデル 'en_core_web_sm' が見つかりません。ダウンロードを試みます...")
+        try:
+            spacy.cli.download("en_core_web_sm")
+            nlp = spacy.load("en_core_web_sm")
+            st.success("spaCyモデル 'en_core_web_sm' のダウンロードとロードに成功しました！")
+            return nlp
+        except Exception as e:
+            st.error(f"spaCyモデルのダウンロード中にエラーが発生しました: {e}")
+            st.info("コマンドラインで 'python -m spacy download en_core_web_sm' を実行してインストールしてください。")
+            st.stop()
 
 nlp = load_model()
 
@@ -50,14 +57,6 @@ class SyntaxElement:
                 display_text += f" ({self.role})"
             display_text += f": {self.text}"
             return display_text
-
-    def to_string(self, indent_level=0):
-        output = []
-        output.append(self.get_display_text(indent_level))
-
-        for child in self.children:
-            output.append(child.to_string(indent_level + 1))
-        return "\n".join(output)
 
 # --- 役割推定の補助関数 ---
 def get_noun_phrase_role(root_token):
@@ -206,7 +205,7 @@ def build_syntax_tree(token, processed_indices):
             for chunk in token.sent.noun_chunks:
                 if pobj_root == chunk.root: # pobj_rootが名詞句のルートであれば
                     np_element = SyntaxElement(get_span_text(list(chunk)), "名詞句", get_noun_phrase_role(chunk.root), tokens=list(chunk), start_token_index=chunk.start, start_char=list(chunk)[0].idx, end_char=list(chunk)[-1].idx + len(list(chunk)[-1].text))
-                    element.children.append(np_element);
+                    element.children.append(np_element)
                     # 名詞句のトークンをprocessed_indicesに追加
                     for t in list(chunk): processed_indices.add(t.i)
                     break

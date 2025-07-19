@@ -33,26 +33,19 @@ class SyntaxElement:
         self.start_char = start_char if start_char is not None else (tokens[0].idx if tokens else -1)
         self.end_char = end_char if end_char is not None else (tokens[-1].idx + len(tokens[-1].text) if tokens else -1)
 
-    def to_string(self, indent_level=0):
+    def get_display_text(self, indent_level=0):
         indent = "  " * indent_level
-        output = []
-        
-        # ハイライト機能なしの純粋なテキスト表示
-        header_text = f"{indent}{self.type}"
+        display_text = f"{indent}{self.type}"
         if self.role:
-            header_text += f" ({self.role})"
-        header_text += f": {self.text}"
+            display_text += f" ({self.role})"
+        display_text += f": {self.text}"
 
         # 単語レベルの要素の場合は品詞も表示
         if self.type == "Word" and self.tokens:
             token_info = self.tokens[0]
-            header_text = f"{indent}{self.text}: {token_info.pos_} ({token_info.tag_})"
+            display_text = f"{indent}{self.text}: {token_info.pos_} ({token_info.tag_})"
         
-        output.append(header_text)
-
-        for child in self.children:
-            output.append(child.to_string(indent_level + 1))
-        return "\n".join(output)
+        return display_text
 
 # --- 役割推定の補助関数 ---
 def get_noun_phrase_role(root_token):
@@ -80,7 +73,7 @@ def get_prepositional_phrase_role(prep_token):
 
 def get_verb_phrase_role(verb_token):
     if verb_token.dep_ == "ROOT":
-        if verb_token.lemma_ in ["be", "seem", "become", "appear", "feel", "look", "sound", "taste", "smell", "grow", "remain", "stay", "turn"]: 
+        if verb_token.lemma_ in ["be", "seem", "become", "appear", "feel", "look", "sound", "taste", "smell", "grow", "remain", "stay", "turn"]:
             return "述語 (連結動詞)"
         return "述語 (主動詞)"
     if verb_token.dep_ == "xcomp": return "述語 (開補文)"
@@ -278,6 +271,70 @@ def analyze_and_format_text(doc):
 
     return parsed_elements
 
+# --- 文法用語の説明辞書 ---
+GRAMMAR_EXPLANATIONS = {
+    "文章全体": "解析対象の英文全体を表します。",
+    "主節": "文の主要な部分で、それだけで完全な意味を持つことができます。",
+    "従属節": "主節に意味的に依存し、それだけでは完全な意味を持たない節です。名詞節、形容詞節、副詞節などがあります。",
+    "名詞句": "名詞を中心に構成される句で、文中で主語、目的語、補語などの名詞の働きをします。",
+    "動詞句": "動詞を中心に構成される句で、述語動詞とその目的語、補語、修飾語などを含みます。",
+    "前置詞句": "前置詞とそれに続く名詞句（前置詞の目的語）で構成される句です。文中で形容詞的または副詞的に機能します。",
+    "不定詞句": "to + 動詞の原形から始まり、名詞、形容詞、または副詞の働きをする句です。",
+    "分詞構文": "動詞の現在分詞（-ing形）または過去分詞（-ed/-en形）から始まり、主節に付帯的な状況（時、理由、条件など）を加える句です。",
+    "Word": "文を構成する最小単位である単語です。",
+    "主語": "動詞の動作を行う主体、または状態を表す対象です。",
+    "述語": "主語の動作や状態を表す動詞の部分です。",
+    "直接目的語": "動詞の動作を直接受ける対象です。",
+    "間接目的語": "動詞の動作が間接的に向けられる対象です（例: give someone somethingのsomeone）。",
+    "補語": "主語や目的語の状態や性質を補足説明する要素です。",
+    "同格": "直前の名詞（句）と同じものを指し、補足説明する要素です。",
+    "副詞的修飾 (名詞句)": "名詞句が副詞のように動詞や文全体を修飾する働きをします（例: every day, last night）。",
+    "副詞的修飾 (場所)": "動作が行われる場所を示します。",
+    "副詞的修飾 (時)": "動作が行われる時を示します。",
+    "副詞的修飾 (手段/方法)": "動作が行われる手段や方法を示します。",
+    "副詞的修飾 (目的/対象)": "動作の目的や対象を示します。",
+    "副詞的修飾 (原因)": "動作や状態の原因を示します。",
+    "形容詞的修飾 (名詞)": "名詞を修飾し、その性質や状態を説明します。",
+    "述語 (連結動詞)": "主語と補語をつなぐ動詞（例: be, seem, becomeなど）です。",
+    "述語 (開補文)": "主語が省略された補語節を持つ述語です。",
+    "述語 (補文)": "動詞の補語となる節を持つ述語です。",
+    "述語 (並列)": "and, orなどの接続詞で並列に繋がれた述語です。",
+    "助動詞": "動詞の意味を補う動詞です（例: can, will, haveなど）。",
+    "副詞節 (原因・理由)": "主節の動作や状態の原因・理由を示します。",
+    "副詞節 (譲歩)": "主節の内容と対照的な状況を示します（〜にもかかわらず）。",
+    "副詞節 (時)": "主節の動作や状態が行われる時を示します。",
+    "副詞節 (条件)": "主節の動作や状態が成立するための条件を示します。",
+    "副詞節 (目的)": "主節の動作や状態の目的を示します。",
+    "副詞節 (場所)": "主節の動作や状態が行われる場所を示します。",
+    "副詞節 (様態)": "主節の動作や状態の様態（〜のように）を示します。",
+    "形容詞節": "名詞を修飾する節です（関係代名詞節など）。",
+    "名詞節 (補文)": "動詞や形容詞の補語となる名詞の働きをする節です。",
+    "名詞節 (開補文)": "主語が省略された名語の働きをする節です。"
+}
+
+# --- 再帰的な表示ヘルパー関数 ---
+def display_syntax_element(element, indent_level=0):
+    indent_str = "  " * indent_level
+    display_text = element.get_display_text(0) # get_display_textは内部でインデントを処理
+
+    # 説明があるかチェック
+    explanation = None
+    if element.type in GRAMMAR_EXPLANATIONS: 
+        explanation = GRAMMAR_EXPLANATIONS[element.type]
+    elif element.role and element.role in GRAMMAR_EXPLANATIONS:
+        explanation = GRAMMAR_EXPLANATIONS[element.role]
+    
+    # ポップオーバーまたは通常のテキスト表示
+    if explanation:
+        with st.popover(f"{indent_str}{display_text}"):
+            st.markdown(explanation)
+    else:
+        st.markdown(f"{indent_str}{display_text}")
+
+    # 子要素を再帰的に表示
+    for child in element.children:
+        display_syntax_element(child, indent_level + 1)
+
 # --- UI構築 ---
 st.title("英文構造解析アプリ")
 
@@ -307,9 +364,8 @@ if st.button("解析実行"):
                 filtered_parsed_data = parsed_data
 
                 for element in filtered_parsed_data:
-                    with st.expander(f"**{element.type}:** {element.text}", expanded=True):
-                        # ここでto_stringの出力をコードブロックとして表示
-                        st.markdown(f"```\n{element.to_string(indent_level=0)}\n```")
+                    # 最上位の要素を表示
+                    display_syntax_element(element, indent_level=0)
 
         except Exception as e:
             st.error(

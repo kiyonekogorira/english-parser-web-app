@@ -23,27 +23,36 @@ nlp = load_model()
 
 # --- 構文要素を保持するデータ構造 ---
 class SyntaxElement:
-    def __init__(self, text, type, role="", children=None, tokens=None, start_token_index=None):
+    def __init__(self, text, type, role="", children=None, tokens=None, start_token_index=None, start_char=None, end_char=None):
         self.text = text
         self.type = type # 例: "Sentence", "Main Clause", "Noun Phrase", "Word"
         self.role = role # 例: "Subject", "Predicate", "Location"
         self.children = children if children is not None else []
         self.tokens = tokens if tokens is not None else [] # 葉ノード（単語）用
         self.start_token_index = start_token_index if start_token_index is not None else (tokens[0].i if tokens else -1)
+        self.start_char = start_char if start_char is not None else (tokens[0].idx if tokens else -1)
+        self.end_char = end_char if end_char is not None else (tokens[-1].idx + len(tokens[-1].text) if tokens else -1)
 
     def to_string(self, indent_level=0):
         indent = "  " * indent_level
         output = []
-        header = f"{indent}- **{self.type}**"
-        if self.role:
-            header += f" ({self.role})"
         
-        # 単語レベルの要素の場合はテキストと品詞を表示
+        # クリック可能な要素としてHTMLを生成
+        # data-start-charとdata-end-charをカスタムデータ属性として追加
+        # JavaScript関数 highlightTextSpan(start, end) を呼び出す
+        header_html = f"<span class='syntax-element-clickable' onclick='highlightTextSpan({self.start_char}, {self.end_char})'>"
+        header_html += f"{indent}- <b>{self.type}</b>"
+        if self.role:
+            header_html += f" ({self.role})"
+        header_html += f": {self.text}</span>"
+
+        # 単語レベルの要素の場合は品詞も表示
         if self.type == "Word" and self.tokens:
             token_info = self.tokens[0]
-            output.append(f"{header}: {self.text} ({token_info.pos_} / {token_info.tag_})")
-        else:
-            output.append(f"{header}: {self.text}")
+            header_html = f"<span class='syntax-element-clickable' onclick='highlightTextSpan({self.start_char}, {self.end_char})'>"
+            header_html += f"{indent}- <b>{self.type}</b>: {self.text} ({token_info.pos_} / {token_info.tag_})</span>"
+        
+        output.append(header_html)
 
         for child in self.children:
             output.append(child.to_string(indent_level + 1))
@@ -136,7 +145,7 @@ def build_syntax_tree(token, processed_indices):
        (token.pos_ == "PRON" and token.dep_ == "nsubj" and token.head.dep_ == "relcl"): # 関係代名詞
         
         element_tokens = get_subtree_tokens(token)
-        element = SyntaxElement(get_span_text(element_tokens), "従属節", get_clause_role(token), start_token_index=token.i)
+        element = SyntaxElement(get_span_text(element_tokens), "従属節", get_clause_role(token), start_token_index=token.i, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
     
     # 2. 不定詞句 / 分詞構文 の検出 (動詞がルートの場合)
     elif token.pos_ == "VERB" or token.pos_ == "AUX":
@@ -160,17 +169,17 @@ def build_syntax_tree(token, processed_indices):
             else:
                 element_tokens = verb_subtree_tokens # 'to' is already part of subtree
             
-            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=element_tokens[0].i)
+            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=element_tokens[0].i, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
 
         elif (token.pos_ == "VERB" and (token.tag_ == "VBG" or token.tag_ == "VBN")) and \
              (token.dep_ in ["acl", "advcl"]):
             vp_type = "分詞構文"
             element_tokens = get_subtree_tokens(token)
-            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=token.i)
+            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=token.i, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
 
         else: # General Verb Phrase
             element_tokens = get_subtree_tokens(token) # Use subtree for general VP
-            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=token.i)
+            element = SyntaxElement(get_span_text(element_tokens), vp_type, vp_role, start_token_index=token.i, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
 
     # 3. 名詞句 (Noun Phrases) の検出
     # Check if the current token is the root of a noun chunk in its sentence
@@ -180,18 +189,18 @@ def build_syntax_tree(token, processed_indices):
                 # Ensure all tokens in chunk are unprocessed before claiming it
                 if all(t.i not in processed_indices for t in chunk):
                     element_tokens = list(chunk)
-                    element = SyntaxElement(get_span_text(element_tokens), "名詞句", get_noun_phrase_role(chunk.root), start_token_index=chunk.start)
+                    element = SyntaxElement(get_span_text(element_tokens), "名詞句", get_noun_phrase_role(chunk.root), start_token_index=chunk.start, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
                 break # Found the chunk, no need to check other chunks for this token
 
     # 4. 前置詞句 (Prepositional Phrases) の検出
     elif token.pos_ == "ADP" and token.dep_ == "prep":
         element_tokens = get_subtree_tokens(token)
-        element = SyntaxElement(get_span_text(element_tokens), "前置詞句", get_prepositional_phrase_role(token), start_token_index=token.i)
+        element = SyntaxElement(get_span_text(element_tokens), "前置詞句", get_prepositional_phrase_role(token), start_token_index=token.i, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
 
     # 5. その他の単語 (Word) として処理
     if element is None: # If no larger element was identified
         element_tokens = [token]
-        element = SyntaxElement(token.text, "Word", tokens=[token], start_token_index=token.i)
+        element = SyntaxElement(token.text, "Word", tokens=[token], start_token_index=token.i, start_char=token.idx, end_char=token.idx + len(token.text))
 
     # Now, if an element was created, mark its tokens as processed and build its children
     if element:
@@ -220,8 +229,49 @@ def build_syntax_tree(token, processed_indices):
 def analyze_and_format_text(doc):
     parsed_elements = []
 
+    # Original text with spans for highlighting
+    highlightable_text = ""
+    for token in doc:
+        # Add a span around each token with its character offset as ID
+        highlightable_text += f"<span id='token-{token.idx}' class='original-token'>{token.text}</span>{token.whitespace_}"
+    st.markdown(f"<div id='original-text-container'>{highlightable_text}</div>", unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+        .highlight { background-color: yellow; }
+        .original-token { cursor: pointer; }
+    </style>
+    <script>
+        function highlightTextSpan(startChar, endChar) {
+            // Remove existing highlights
+            document.querySelectorAll('.highlight').forEach(el => {
+                el.classList.remove('highlight');
+            });
+
+            // Apply new highlights
+            const container = document.getElementById('original-text-container');
+            if (!container) return;
+
+            let currentOffset = 0;
+            container.childNodes.forEach(node => {
+                if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('original-token')) {
+                    const tokenText = node.textContent;
+                    const tokenStart = currentOffset;
+                    const tokenEnd = currentOffset + tokenText.length;
+
+                    if (Math.max(startChar, tokenStart) < Math.min(endChar, tokenEnd)) {
+                        node.classList.add('highlight');
+                    }
+                    currentOffset = tokenEnd + (node.nextSibling && node.nextSibling.nodeType === Node.TEXT_NODE ? node.nextSibling.textContent.length : 0);
+                } else if (node.nodeType === Node.TEXT_NODE) {
+                    currentOffset += node.textContent.length;
+                }
+            });
+        }
+    </script>
+    """, unsafe_allow_html=True)
+
     for sent in doc.sents:
-        sentence_element = SyntaxElement(sent.text, "文", "全体", start_token_index=sent.start)
+        sentence_element = SyntaxElement(sent.text, "文", "全体", start_token_index=sent.start, start_char=sent.start_char, end_char=sent.end_char)
         processed_indices = set()
         
         # Collect all top-level elements for this sentence
@@ -270,7 +320,7 @@ if st.button("解析実行"):
                 st.subheader("解析結果:")
                 for element in parsed_data:
                     with st.expander(f"**{element.type}:** {element.text}", expanded=True):
-                        st.markdown(element.to_string(indent_level=0))
+                        st.markdown(element.to_string(indent_level=0), unsafe_allow_html=True)
 
         except Exception as e:
             st.error(

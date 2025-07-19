@@ -23,12 +23,13 @@ nlp = load_model()
 
 # --- 構文要素を保持するデータ構造 ---
 class SyntaxElement:
-    def __init__(self, text, type, role="", children=None, tokens=None):
+    def __init__(self, text, type, role="", children=None, tokens=None, start_token_index=None):
         self.text = text
         self.type = type # 例: "Sentence", "Main Clause", "Noun Phrase", "Word"
         self.role = role # 例: "Subject", "Predicate", "Location"
         self.children = children if children is not None else []
         self.tokens = tokens if tokens is not None else [] # 葉ノード（単語）用
+        self.start_token_index = start_token_index if start_token_index is not None else (tokens[0].i if tokens else -1)
 
     def to_string(self, indent_level=0):
         indent = "  " * indent_level
@@ -114,7 +115,7 @@ def build_syntax_tree(token, processed_indices):
         clause_type = "従属節"
         clause_role = get_clause_role(token)
 
-        clause_element = SyntaxElement(clause_text, clause_type, clause_role)
+        clause_element = SyntaxElement(clause_text, clause_type, clause_role, start_token_index=token.i)
         
         for child in token.children:
             child_element = build_syntax_tree(child, processed_indices)
@@ -144,7 +145,7 @@ def build_syntax_tree(token, processed_indices):
             infinitive_tokens = sorted(list(set(infinitive_tokens)), key=lambda t: t.i) # 重複削除とソート
             
             infinitive_text = " ".join([t.text for t in infinitive_tokens])
-            vp_element = SyntaxElement(infinitive_text, vp_type, vp_role)
+            vp_element = SyntaxElement(infinitive_text, vp_type, vp_role, start_token_index=to_token.i)
             
             for t in infinitive_tokens:
                 if t.i not in processed_indices:
@@ -160,7 +161,7 @@ def build_syntax_tree(token, processed_indices):
             vp_type = "分詞構文"
             participle_tokens = get_subtree_tokens(token)
             participle_text = " ".join([t.text for t in participle_tokens])
-            vp_element = SyntaxElement(participle_text, vp_type, vp_role)
+            vp_element = SyntaxElement(participle_text, vp_type, vp_role, start_token_index=token.i)
             
             for t in participle_tokens:
                 if t.i not in processed_indices:
@@ -180,7 +181,7 @@ def build_syntax_tree(token, processed_indices):
         vp_tokens = sorted(vp_tokens, key=lambda t: t.i)
         vp_text = " ".join([t.text for t in vp_tokens])
         
-        vp_element = SyntaxElement(vp_text, vp_type, vp_role)
+        vp_element = SyntaxElement(vp_text, vp_type, vp_role, start_token_index=token.i)
         for t in vp_tokens:
             if t.i not in processed_indices:
                 child_element = build_syntax_tree(t, processed_indices)
@@ -190,22 +191,28 @@ def build_syntax_tree(token, processed_indices):
         for t in vp_tokens: processed_indices.add(t.i)
         return vp_element
 
-    # 3. 名詞句 (Noun Phrases) の検出 (noun_chunksを優先)
-    for chunk in token.doc.noun_chunks:
-        if token.i >= chunk.start and token.i < chunk.end and token.root == chunk.root:
-            if all(t.i not in processed_indices for t in chunk):
-                np_element = SyntaxElement(chunk.text, "名詞句", get_noun_phrase_role(chunk.root))
+    # 3. 名詞句 (Noun Phrases) の検出
+    # Check if the current token is the root of a noun chunk in its sentence
+    current_token_is_np_root = False
+    for chunk in token.sent.noun_chunks: # Iterate over noun chunks in the current sentence
+        if token == chunk.root: # If the current token is the root of this chunk
+            current_token_is_np_root = True
+            if all(t.i not in processed_indices for t in chunk): # Ensure all tokens in chunk are unprocessed
+                np_element = SyntaxElement(chunk.text, "名詞句", get_noun_phrase_role(chunk.root), tokens=list(chunk), start_token_index=chunk.start)
                 for t in chunk:
-                    np_element.children.append(SyntaxElement(t.text, "Word", tokens=[t]))
                     processed_indices.add(t.i)
                 return np_element
+            break # Found the chunk, no need to check other chunks for this token
+
+    if current_token_is_np_root: # If it was an NP root but already processed or not fully unprocessed
+        return None # Or handle appropriately, maybe it's part of a larger processed element
 
     # 4. 前置詞句 (Prepositional Phrases) の検出
     if token.pos_ == "ADP" and token.dep_ == "prep":
         pp_tokens = get_subtree_tokens(token)
         pp_text = " ".join([t.text for t in pp_tokens])
         
-        pp_element = SyntaxElement(pp_text, "前置詞句", get_prepositional_phrase_role(token))
+        pp_element = SyntaxElement(pp_text, "前置詞句", get_prepositional_phrase_role(token), start_token_index=token.i)
         for t in pp_tokens:
             if t.i not in processed_indices:
                 child_element = build_syntax_tree(t, processed_indices)
@@ -218,7 +225,7 @@ def build_syntax_tree(token, processed_indices):
     # 5. その他の単語 (Word) として処理
     if token.i not in processed_indices:
         processed_indices.add(token.i)
-        return SyntaxElement(token.text, "Word", tokens=[token])
+        return SyntaxElement(token.text, "Word", tokens=[token], start_token_index=token.i)
     
     return None
 
@@ -227,14 +234,15 @@ def analyze_and_format_text(doc):
     parsed_elements = []
 
     for sent in doc.sents:
-        sentence_element = SyntaxElement(sent.text, "文", "全体")
+        sentence_element = SyntaxElement(sent.text, "文", "全体", start_token_index=sent.start)
         processed_indices = set()
         
         # 文のルートから構文ツリーを構築
         main_clause_root_element = build_syntax_tree(sent.root, processed_indices)
         
         if main_clause_root_element:
-            main_clause_element = SyntaxElement(sent.text, "主節", "文の核")
+            # 主節のテキストは文全体とするか、より正確に特定するかは要検討
+            main_clause_element = SyntaxElement(sent.text, "主節", "文の核", start_token_index=sent.start)
             main_clause_element.children.append(main_clause_root_element)
             sentence_element.children.append(main_clause_element)
 
@@ -243,17 +251,25 @@ def analyze_and_format_text(doc):
             if token.i not in processed_indices:
                 element = build_syntax_tree(token, processed_indices)
                 if element:
+                    # 従属節は直接 sentence_element の子として追加
                     if element.type == "従属節":
                         sentence_element.children.append(element)
                     else:
+                        # それ以外の要素は主節の子として追加 (主節が構築されている場合)
                         if main_clause_element:
                             main_clause_element.children.append(element)
                         else:
+                            # 主節が構築されていない場合は文の直接の子として追加
                             sentence_element.children.append(element)
         
         # 最終的な要素の順序を調整 (元の文の順序に近づける)
-        sentence_element.children.sort(key=lambda x: x.tokens[0].i if x.tokens else 0)
+        # sentence_elementの直接の子要素をソート
+        sentence_element.children.sort(key=lambda x: x.start_token_index)
         
+        # main_clause_elementの直接の子要素もソート (存在する場合)
+        if main_clause_element and main_clause_element.children:
+            main_clause_element.children.sort(key=lambda x: x.start_token_index)
+
         parsed_elements.append(sentence_element)
 
     return parsed_elements

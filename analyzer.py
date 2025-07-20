@@ -4,6 +4,25 @@ import spacy
 class SentenceAnalyzer:
     def __init__(self, nlp_model):
         self.nlp = nlp_model
+        self.pos_map = {
+            "PROPN": "名詞 (固有名詞)",
+            "NOUN": "名詞",
+            "VERB": "動詞",
+            "ADP": "前置詞",
+            "DET": "冠詞",
+            "ADJ": "形容詞",
+            "ADV": "副詞",
+            "CONJ": "接続詞",
+            "SCONJ": "接続詞 (従属)",
+            "CCONJ": "接続詞 (等位)",
+            "PRON": "代名詞",
+            "AUX": "助動詞",
+            "PART": "助詞",
+            "NUM": "数詞",
+            "PUNCT": "句読点",
+            "SYM": "記号",
+            "X": "その他",
+        }
 
     def analyze_text(self, text):
         cleaned_lines = []
@@ -35,6 +54,10 @@ class SentenceAnalyzer:
         prepositional_phrases = []
 
         sent_offset = doc.start_char
+
+        pos_tagged_tokens = []
+        for token in doc:
+            pos_tagged_tokens.append(f"{token.text} ({self.pos_map.get(token.pos_, token.pos_)})")
 
         for token in doc:
             if "nsubj" in token.dep_:
@@ -154,4 +177,5 @@ class SentenceAnalyzer:
                 }
                 for token in doc
             ],
+            "pos_tagged_text": " ".join(pos_tagged_tokens),
         }

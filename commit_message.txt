@@ -1,1 +1,4 @@
-Update project documentation (design, requirements, roadmap, tasks)
+refactor: コードの堅牢化と最適化の準備
+
+- SyntaxElement.get_display_textとto_stringの役割分担を明確化（既存コードの確認）。
+- analyze_and_format_textの簡素化、build_syntax_treeの堅牢化の方針をroadmap.mdに追記。

@@ -24,7 +24,7 @@ nlp = load_model()
 
 # --- 構文要素を保持するデータ構造 ---
 class SyntaxElement:
-    def __init__(self, text, type, role="", children=None, tokens=None, start_token_index=None, start_char=None, end_char=None, pos_tagged_text=""):
+    def __init__(self, text, type, role="", children=None, tokens=None, start_token_index=None, start_char=None, end_char=None, pos_tagged_text="", colored_text_for_display=""):
         self.text = text
         self.type = type # 例: "Sentence", "Main Clause", "Noun Phrase", "Word"
         self.role = role # 例: "Subject", "Predicate", "Location"
@@ -34,17 +34,21 @@ class SyntaxElement:
         self.start_char = start_char if start_char is not None else (tokens[0].idx if tokens else -1)
         self.end_char = end_char if end_char is not None else (tokens[-1].idx + len(tokens[-1].text) if tokens else -1)
         self.pos_tagged_text = pos_tagged_text
+        self.colored_text_for_display = colored_text_for_display
 
 # --- 表示用の関数 ---
-def display_syntax_tree(element, indent_level=0, analyzer=None):
+def display_syntax_tree(element, indent_level=0, analyzer=None, use_colored_text_for_root=False):
     indent = "&nbsp;" * 4 * indent_level
 
     # 色付け処理
-    display_text = element.text
-    if element.role == "主語":
-        display_text = f'<font color="blue">{element.text}</font>'
-    elif element.role == "述語 (主動詞)":
-        display_text = f'<font color="red">{element.text}</font>'
+    if use_colored_text_for_root and indent_level == 0:
+        display_text = element.colored_text_for_display
+    else:
+        display_text = element.text
+        if element.role == "主語":
+            display_text = f'<font color="blue">{element.text}</font>'
+        elif element.role == "述語 (主動詞)":
+            display_text = f'<font color="red">{element.text}</font>'
 
     # ヘッダー表示
     header = f"{indent}{element.type}"
@@ -63,7 +67,7 @@ def display_syntax_tree(element, indent_level=0, analyzer=None):
                 st.markdown(f"{indent}&nbsp;&nbsp;&nbsp;&nbsp;{token.text}: {pos_japanese}", unsafe_allow_html=True)
     else:
         for child in element.children:
-            display_syntax_tree(child, indent_level + 1, analyzer)
+            display_syntax_tree(child, indent_level + 1, analyzer, use_colored_text_for_root=False)
 
 # --- 役割推定の補助関数 ---
 def get_noun_phrase_role(root_token):
@@ -189,6 +193,18 @@ def analyze_and_format_text(doc, analyzer):
         sentence_element_children = []
         processed_indices = set()
 
+        # 色付けされた文章全体テキストを生成
+        colored_sentence_parts = []
+        for token in sent:
+            token_text = token.text
+            # 主語と述語（主動詞）に色付け
+            if get_noun_phrase_role(token) == "主語":
+                token_text = f'<font color="blue">{token.text}</font>'
+            elif get_verb_phrase_role(token) == "述語 (主動詞)":
+                token_text = f'<font color="red">{token.text}</font>'
+            colored_sentence_parts.append(token_text)
+        colored_sentence_text = " ".join(colored_sentence_parts)
+
         # 1. Identify and process Noun Phrases first
         for chunk in sent.noun_chunks:
             # Ensure this chunk hasn't been processed as part of a larger structure (e.g., a clause)
@@ -236,31 +252,18 @@ def analyze_and_format_text(doc, analyzer):
         # Sort all identified elements by their start index
         sentence_element_children.sort(key=lambda x: x.start_token_index)
 
-        # 色付けされた文章全体テキストを生成
-        colored_sentence_parts = []
-        for token in sent:
-            token_text = token.text
-            # 主語と述語（主動詞）に色付け
-            if get_noun_phrase_role(token) == "主語":
-                token_text = f'<font color="blue">{token.text}</font>'
-            elif get_verb_phrase_role(token) == "述語 (主動詞)":
-                token_text = f'<font color="red">{token.text}</font>'
-            colored_sentence_parts.append(token_text)
-        colored_sentence_text = " ".join(colored_sentence_parts)
-
         # Create the main sentence element
         sentence_element = SyntaxElement(
-            colored_sentence_text, # 色付けされたテキストを使用
+            sent.text, # オリジナルのテキストを使用
             "文章全体",
             "",
             children=sentence_element_children,
             start_token_index=sent.start,
             start_char=sent.start_char,
             end_char=sent.end_char,
-            pos_tagged_text=analyzer._analyze_sentence(sent)["pos_tagged_text"] # analyzerで色付けされたpos_tagged_textを使用
+            pos_tagged_text=analyzer._analyze_sentence(sent)["pos_tagged_text"],
+            colored_text_for_display=colored_sentence_text # 色付けされたテキストを新しい属性に格納
         )
-        parsed_elements.append(sentence_element)
-        parsed_elements.append(sentence_element)
         parsed_elements.append(sentence_element)
 
     return parsed_elements
@@ -294,7 +297,8 @@ if st.button("解析実行"):
                 for element in parsed_data:
                     with st.expander(f"**{element.type}:** {element.text}", expanded=True):
                         st.markdown(f"**品詞分解:** {element.pos_tagged_text}", unsafe_allow_html=True)
-                        display_syntax_tree(element, analyzer=analyzer)
+                        # display_syntax_treeの最初の呼び出しでcolored_text_for_displayを使用
+                        display_syntax_tree(element, analyzer=analyzer, use_colored_text_for_root=True)
 
         except Exception as e:
             st.error(

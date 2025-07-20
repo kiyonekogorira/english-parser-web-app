@@ -236,9 +236,21 @@ def analyze_and_format_text(doc, analyzer):
         # Sort all identified elements by their start index
         sentence_element_children.sort(key=lambda x: x.start_token_index)
 
+        # 色付けされた文章全体テキストを生成
+        colored_sentence_parts = []
+        for token in sent:
+            token_text = token.text
+            # 主語と述語（主動詞）に色付け
+            if get_noun_phrase_role(token) == "主語":
+                token_text = f'<font color="blue">{token.text}</font>'
+            elif get_verb_phrase_role(token) == "述語 (主動詞)":
+                token_text = f'<font color="red">{token.text}</font>'
+            colored_sentence_parts.append(token_text)
+        colored_sentence_text = " ".join(colored_sentence_parts)
+
         # Create the main sentence element
         sentence_element = SyntaxElement(
-            sent.text, # オリジナルのテキストを使用
+            colored_sentence_text, # 色付けされたテキストを使用
             "文章全体",
             "",
             children=sentence_element_children,
@@ -247,6 +259,8 @@ def analyze_and_format_text(doc, analyzer):
             end_char=sent.end_char,
             pos_tagged_text=analyzer._analyze_sentence(sent)["pos_tagged_text"] # analyzerで色付けされたpos_tagged_textを使用
         )
+        parsed_elements.append(sentence_element)
+        parsed_elements.append(sentence_element)
         parsed_elements.append(sentence_element)
 
     return parsed_elements

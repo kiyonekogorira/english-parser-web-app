@@ -35,29 +35,34 @@ class SyntaxElement:
         self.end_char = end_char if end_char is not None else (tokens[-1].idx + len(tokens[-1].text) if tokens else -1)
         self.pos_tagged_text = pos_tagged_text
 
-    def to_string(self, indent_level=0, analyzer=None):
-        indent = "  " * indent_level
-        output = []
+# --- 表示用の関数 ---
+def display_syntax_tree(element, indent_level=0, analyzer=None):
+    indent = "&nbsp;" * 4 * indent_level
 
-        # 句や節のヘッダー表示
-        header = f"{indent}{self.type}"
-        if self.role:
-            header += f" ({self.role})"
-        if self.text:
-             header += f": {self.text}"
-        output.append(header)
+    # 色付け処理
+    display_text = element.text
+    if element.role == "主語":
+        display_text = f'<font color="blue">{element.text}</font>'
+    elif element.role == "述語 (主動詞)":
+        display_text = f'<font color="red">{element.text}</font>'
 
-        # 子要素（単語や他の句）をインデントして表示
-        if self.tokens and not self.children:
-            for token in self.tokens:
-                if token.pos_ != "PUNCT":
-                    pos_japanese = analyzer.pos_map.get(token.pos_, token.pos_)
-                    output.append(f"{indent}  {token.text}: {pos_japanese}")
-        else:
-            for child in self.children:
-                output.append(child.to_string(indent_level + 1, analyzer))
+    # ヘッダー表示
+    header = f"{indent}{element.type}"
+    if element.role:
+        header += f" ({element.role})"
+    if element.text:
+        header += f": {display_text}"
+    st.markdown(header, unsafe_allow_html=True)
 
-        return "\n".join(output)
+    # 子要素の表示
+    if element.tokens and not element.children:
+        for token in element.tokens:
+            if token.pos_ not in ["SPACE"]:
+                pos_japanese = analyzer.get_pos_japanese(token)
+                st.markdown(f"{indent}&nbsp;&nbsp;&nbsp;&nbsp;{token.text}: {pos_japanese}", unsafe_allow_html=True)
+    else:
+        for child in element.children:
+            display_syntax_tree(child, indent_level + 1, analyzer)
 
 # --- 役割推定の補助関数 ---
 def get_noun_phrase_role(root_token):
@@ -132,7 +137,7 @@ def get_subtree_tokens(token):
 
 # --- 依存ツリーを再帰的に走査し、構文要素を構築する関数 ---
 def build_syntax_tree(token, processed_indices, analyzer):
-    if token.i in processed_indices or token.pos_ == "PUNCT":
+    if token.i in processed_indices or token.pos_ in ["PUNCT", "SPACE"]:
         processed_indices.add(token.i) # Ensure punctuation is marked processed
         return None
 
@@ -166,7 +171,7 @@ def build_syntax_tree(token, processed_indices, analyzer):
     # 4. その他の単語
     if element is None:
         element_tokens = [token]
-        pos_japanese = analyzer.pos_map.get(token.pos_, token.pos_)
+        pos_japanese = analyzer.get_pos_japanese(token)
         element = SyntaxElement(token.text, pos_japanese, "", tokens=element_tokens, start_token_index=token.i, start_char=token.idx, end_char=token.idx + len(token.text))
 
     # トークンを処理済みとしてマーク
@@ -178,30 +183,81 @@ def build_syntax_tree(token, processed_indices, analyzer):
 # --- メインの解析ロジック ---
 def analyze_and_format_text(doc, analyzer):
     parsed_elements = []
-    analyzed_sentences = analyzer.analyze_text(doc.text)
 
     for i, sent in enumerate(doc.sents):
-        sentence_element = SyntaxElement(sent.text, "文章全体", "", start_token_index=sent.start, start_char=sent.start_char, end_char=sent.end_char, pos_tagged_text=analyzed_sentences[i]["pos_tagged_text"])
-        
+        sentence_element_children = []
         processed_indices = set()
-        
-        # 文のトークンを順番に処理
-        tokens_in_sentence = sorted([t for t in sent], key=lambda t: t.i)
-        
-        while len(processed_indices) < len(tokens_in_sentence):
-            # 未処理のトークンを取得
-            unprocessed_tokens = [t for t in tokens_in_sentence if t.i not in processed_indices]
-            if not unprocessed_tokens:
-                break
-            
-            # 次の未処理トークンから構文ツリーを構築
-            token = unprocessed_tokens[0]
-            element = build_syntax_tree(token, processed_indices, analyzer)
-            if element:
-                sentence_element.children.append(element)
 
-        # 最終的な要素の順序を調整
-        sentence_element.children.sort(key=lambda x: x.start_token_index)
+        # 1. Identify and process Noun Phrases first
+        for chunk in sent.noun_chunks:
+            # Ensure this chunk hasn't been processed as part of a larger structure (e.g., a clause)
+            if all(t.i not in processed_indices for t in chunk):
+                element_tokens = list(chunk)
+                role = get_noun_phrase_role(chunk.root)
+                np_element = SyntaxElement(
+                    get_span_text(element_tokens),
+                    "名詞句",
+                    role,
+                    tokens=element_tokens,
+                    start_token_index=chunk.start,
+                    start_char=element_tokens[0].idx,
+                    end_char=element_tokens[-1].idx + len(element_tokens[-1].text)
+                )
+                sentence_element_children.append(np_element)
+                for t in element_tokens:
+                    processed_indices.add(t.i)
+
+        # 2. Process remaining tokens (including verbs, prepositions, other words, and clauses)
+        # Iterate through all tokens in the sentence
+        for token in sorted(sent, key=lambda t: t.i):
+            if token.i not in processed_indices and token.pos_ not in ["PUNCT", "SPACE"]:
+                # Try to build a syntax tree element for this token
+                # This will handle verbs, prepositional phrases (if not already caught by noun chunks), and other words
+                element = build_syntax_tree(token, processed_indices, analyzer)
+                if element:
+                    sentence_element_children.append(element)
+            elif token.pos_ == "PUNCT" and token.i not in processed_indices:
+                # Handle punctuation as individual elements
+                pos_japanese = analyzer.get_pos_japanese(token)
+                punct_element = SyntaxElement(
+                    token.text,
+                    pos_japanese,
+                    "",
+                    tokens=[token],
+                    start_token_index=token.i,
+                    start_char=token.idx,
+                    end_char=token.idx + len(token.text)
+                )
+                sentence_element_children.append(punct_element)
+                processed_indices.add(token.i)
+
+
+        # Sort all identified elements by their start index
+        sentence_element_children.sort(key=lambda x: x.start_token_index)
+
+        # 色付けされた文章全体テキストを生成
+        colored_sentence_parts = []
+        for token in sent:
+            token_text = token.text
+            # 主語と述語（主動詞）に色付け
+            if get_noun_phrase_role(token) == "主語":
+                token_text = f'<font color="blue">{token.text}</font>'
+            elif get_verb_phrase_role(token) == "述語 (主動詞)":
+                token_text = f'<font color="red">{token.text}</font>'
+            colored_sentence_parts.append(token_text)
+        colored_sentence_text = " ".join(colored_sentence_parts)
+
+        # Create the main sentence element
+        sentence_element = SyntaxElement(
+            colored_sentence_text, # 色付けされたテキストを使用
+            "文章全体",
+            "",
+            children=sentence_element_children,
+            start_token_index=sent.start,
+            start_char=sent.start_char,
+            end_char=sent.end_char,
+            pos_tagged_text=analyzer._analyze_sentence(sent)["pos_tagged_text"] # Re-use analyzer for pos_tagged_text
+        )
         parsed_elements.append(sentence_element)
 
     return parsed_elements
@@ -234,8 +290,8 @@ if st.button("解析実行"):
                 
                 for element in parsed_data:
                     with st.expander(f"**{element.type}:** {element.text}", expanded=True):
-                        st.markdown(f"**品詞分解:** {element.pos_tagged_text}")
-                        st.markdown(f"```\n{element.to_string(indent_level=0, analyzer=analyzer)}\n```")
+                        st.markdown(f"**品詞分解:** {element.pos_tagged_text}", unsafe_allow_html=True)
+                        display_syntax_tree(element, analyzer=analyzer)
 
         except Exception as e:
             st.error(

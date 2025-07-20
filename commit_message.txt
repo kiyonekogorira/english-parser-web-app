@@ -1,4 +1,5 @@
-refactor: コードの堅牢化と最適化の準備
+feat: 品詞分解機能と階層表示を追加
 
-- SyntaxElement.get_display_textとto_stringの役割分担を明確化（既存コードの確認）。
-- analyze_and_format_textの簡素化、build_syntax_treeの堅牢化の方針をroadmap.mdに追記。
+- analyzer.pyに品詞分解機能を追加
+- app.pyに品詞分解結果の表示機能を追加
+- app.pyの表示を階層的な箇条書き形式に変更

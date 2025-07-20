@@ -24,6 +24,14 @@ class SentenceAnalyzer:
             "X": "その他",
         }
 
+    def get_pos_japanese(self, token):
+        if token.pos_ == "PUNCT":
+            if token.text == ".":
+                return "句読点 (ピリオド)"
+            elif token.text == ",":
+                return "句読点 (カンマ)"
+        return self.pos_map.get(token.pos_, token.pos_)
+
     def analyze_text(self, text):
         cleaned_lines = []
         for line in text.split("\n"):
@@ -57,7 +65,8 @@ class SentenceAnalyzer:
 
         pos_tagged_tokens = []
         for token in doc:
-            pos_tagged_tokens.append(f"{token.text} ({self.pos_map.get(token.pos_, token.pos_)})")
+            if token.pos_ != "SPACE":
+                pos_tagged_tokens.append(f"{token.text} ({self.get_pos_japanese(token)})")
 
         for token in doc:
             if "nsubj" in token.dep_:

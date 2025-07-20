@@ -51,6 +51,14 @@ class SyntaxElement:
             display_text += f": {self.text}"
             return display_text
 
+    def to_string(self, indent_level=0):
+        output = []
+        output.append(self.get_display_text(indent_level))
+
+        for child in self.children:
+            output.append(child.to_string(indent_level + 1))
+        return "\n".join(output)
+
 # --- 役割推定の補助関数 ---
 def get_noun_phrase_role(root_token):
     if root_token.dep_ == "nsubj": return "主語"
@@ -77,7 +85,7 @@ def get_prepositional_phrase_role(prep_token):
 
 def get_verb_phrase_role(verb_token):
     if verb_token.dep_ == "ROOT":
-        if verb_token.lemma_ in ["be", "seem", "become", "appear", "feel", "look", "sound", "taste", "smell", "grow", "remain", "stay", "turn"]:
+        if verb_token.lemma_ in ["be", "seem", "become", "appear", "feel", "look", "sound", "taste", "smell", "grow", "remain", "stay", "turn"]: 
             return "述語 (連結動詞)"
         return "述語 (主動詞)"
     if verb_token.dep_ == "xcomp": return "述語 (開補文)"

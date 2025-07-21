@@ -151,7 +151,8 @@ def display_expected_chunks(expected_data):
     for sent_data in expected_data:
         st.markdown(f"**文:** `{sent_data['sentence']}`")
         for chunk in sent_data['chunks']:
-            st.markdown(f"- **{chunk['type']}**: `{chunk['text']}`")
+            japanese_type = chunk_type_japanese_map.get(chunk['type'], chunk['type'])
+            st.markdown(f"- **{japanese_type}**: `{chunk['text']}`")
     st.markdown("---")
 
 def display_color_legend():

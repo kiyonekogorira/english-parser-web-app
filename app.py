@@ -19,7 +19,7 @@ def analyze_sentence(text):
 # --- 3. UI表示関数の定義 (今後のステップで実装) ---
 pos_colors = {
     'NOUN': 'blue', 'VERB': 'red', 'ADJ': 'green', 'ADP': 'purple', 'DET': 'orange',
-    'ADV': 'brown', 'PRON': 'pink', 'AUX': 'cyan', 'PART': 'grey', 'CCONJ': 'lime',
+    'ADV': 'brown', 'PRON': 'pink', 'AUX': 'darkcyan', 'PART': 'darkgrey', 'CCONJ': 'lime',
     'SCONJ': 'teal', 'INTJ': 'maroon', 'NUM': 'navy', 'PROPN': 'darkblue',
     'SYM': 'olive', 'X': 'black', 'SPACE': 'lightgrey', 'PUNCT': 'darkgrey'
 }
@@ -151,8 +151,7 @@ def display_expected_chunks(expected_data):
     for sent_data in expected_data:
         st.markdown(f"**文:** `{sent_data['sentence']}`")
         for chunk in sent_data['chunks']:
-            japanese_type = chunk_type_japanese_map.get(chunk['type'], chunk['type'])
-            st.markdown(f"- **{japanese_type}**: `{chunk['text']}`")
+            st.markdown(f"- **{chunk['type']}**: `{chunk['text']}`")
     st.markdown("---")
 
 def display_color_legend():
@@ -230,7 +229,8 @@ st.sidebar.markdown("- **助動詞 (AUX)**: 主動詞を助ける動詞（例: b
 st.sidebar.markdown("- **接続詞 (CONJ/CCONJ/SCONJ)**: 単語、句、節などを結びつける単語。")
 st.sidebar.markdown("- **固有名詞 (PROPN)**: 特定の人、場所、組織などの名前。")
 st.sidebar.markdown("- **数詞 (NUM)**: 数量を表す単語。")
-st.sidebar.markdown("- **句読点 (PUNCT)**: 文の区切りを示す記号。")
+st.sidebar.markdown("- **間投詞 (INTJ)**: 感情や驚きなどを表す単語（例: Oh!, Wow!）。")
+st.sidebar.markdown("- **句読点 (PUNCT)**: 文の句読点。")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 句構造の解説")
 st.sidebar.markdown("- **名詞句 (NP)**: 名詞を中心に構成される句。文の主語や目的語になることが多いです。例: `The quick brown fox`")

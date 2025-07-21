@@ -192,7 +192,8 @@ class SentenceAnalyzer:
             tokens_info.append(token_info)
 
         chunks_info = []
-        # 名詞句 (NP)
+
+        # 名詞句 (NP) - spaCyのnoun_chunksをそのまま利用
         for chunk in doc.noun_chunks:
             chunks_info.append({
                 'type': 'NP',
@@ -201,148 +202,143 @@ class SentenceAnalyzer:
                 'end_id': chunk.end - 1
             })
 
-        # 動詞句 (VP), 前置詞句 (PP), 副詞句 (ADVP) はカスタムロジックで抽出
-        # (MVPでは簡易的な抽出)
-        for token in doc:
-            # 動詞句 (VP)
-            if token.dep_ == "ROOT":
-                vp_start = token.i
-                vp_end = token.i
-                for child in token.children:
-                    if child.dep_ in ["aux", "auxpass", "dobj", "attr", "acomp"]:
-                        vp_end = max(vp_end, child.i)
-                chunks_info.append({
-                    'type': 'VP',
-                    'text': doc[vp_start:vp_end+1].text,
-                    'start_id': vp_start,
-                    'end_id': vp_end
-                })
-
-            # 前置詞句 (PP)
-            if token.pos_ == "ADP":
-                pp_start = token.i
-                pp_end = token.i
-                for child in token.children:
-                    if child.dep_ == "pobj":
-                        pp_end = child.i
-                chunks_info.append({
-                    'type': 'PP',
-                    'text': doc[pp_start:pp_end+1].text,
-                    'start_id': pp_start,
-                    'end_id': pp_end
-                })
-
-            # 副詞句 (ADVP)
-            if token.pos_ == "ADV":
-                advp_start = token.i
-                advp_end = token.i
-                chunks_info.append({
-                    'type': 'ADVP',
-                    'text': doc[advp_start:advp_end+1].text,
-                    'start_id': advp_start,
-                    'end_id': advp_end
-                })
-
-        for token in doc:
-            if "nsubj" in token.dep_:
-                subjects.append(
-                    {
-                        "text": token.text,
-                        "start": token.idx,
-                        "end": token.idx + len(token.text),
-                    }
-                )
-            if token.pos_ == "VERB" or token.pos_ == "AUX":
-                verbs.append(
-                    {
-                        "text": token.text,
-                        "start": token.idx,
-                        "end": token.idx + len(token.text),
-                    }
-                )
-
-        for chunk in doc.noun_chunks:
-            noun_phrases.append(
-                {"text": chunk.text, "start": chunk.start_char, "end": chunk.end_char}
-            )
-
-        temp_verb_phrases = []
-        temp_prepositional_phrases = []
-
+        # 動詞句 (VP) の抽出を改善
+        # ROOT動詞とその依存関係を探索
+        # または、動詞で、かつそのheadが動詞である場合（複合動詞など）
         for token in doc:
             if token.pos_ == "VERB" or token.pos_ == "AUX":
-                current_vp_tokens = []
-                current_vp_tokens.append(token)
+                # ROOT動詞、または動詞句の主要な動詞
+                if token.dep_ == "ROOT" or (token.head.pos_ == "VERB" and token.dep_ in ["aux", "xcomp", "ccomp", "advcl"]):
+                    # 動詞句の開始と終了インデックスを見つける
+                    # 動詞とその全ての依存関係を含むスパンを考慮
+                    # spaCyのsubtreeは連続したスパンを保証しないため、手動で最小・最大インデックスを計算
+                    
+                    # 関連するトークンを収集するヘルパー関数
+                    def get_verb_phrase_tokens(verb_token):
+                        vp_tokens = set([verb_token])
+                        # 助動詞、目的語、補語、副詞修飾語などを追加
+                        for child in verb_token.children:
+                            if child.dep_ in ["aux", "auxpass", "dobj", "iobj", "attr", "acomp", "xcomp", "ccomp", "advcl", "prt", "agent", "oprd", "neg"]:
+                                vp_tokens.add(child)
+                                vp_tokens.update(get_verb_phrase_tokens(child)) # 再帰的に子孫も追加
+                            elif child.dep_ == "prep": # 前置詞句もVPの一部として含める場合
+                                vp_tokens.add(child)
+                                vp_tokens.update(get_verb_phrase_tokens(child))
+                        return vp_tokens
 
-                def get_non_subject_dependents(t):
-                    dependents = []
-                    for child in t.children:
-                        if child.dep_ not in ["nsubj", "csubj", "expl"]:
-                            dependents.append(child)
-                            dependents.extend(get_non_subject_dependents(child))
-                    return dependents
+                    vp_tokens_set = get_verb_phrase_tokens(token)
+                    
+                    if vp_tokens_set:
+                        vp_tokens_list = sorted(list(vp_tokens_set), key=lambda t: t.i)
+                        
+                        # 連続したスパンを形成するために、最小と最大のインデックスを使用
+                        start_id = vp_tokens_list[0].i
+                        end_id = vp_tokens_list[-1].i
+                        
+                        # 句のテキストを正確に取得
+                        vp_text = doc[start_id : end_id + 1].text
+                        
+                        # 重複するVPを追加しないようにチェック（簡易的な重複排除）
+                        # より厳密な重複排除は、後でremove_subsetsで行う
+                        is_duplicate = False
+                        for existing_chunk in chunks_info:
+                            if existing_chunk['type'] == 'VP' and \
+                               existing_chunk['start_id'] == start_id and \
+                               existing_chunk['end_id'] == end_id:
+                               is_duplicate = True
+                               break
+                        
+                        if not is_duplicate:
+                            chunks_info.append({
+                                'type': 'VP',
+                                'text': vp_text,
+                                'start_id': start_id,
+                                'end_id': end_id
+                            })
 
-                current_vp_tokens.extend(get_non_subject_dependents(token))
-
-                if token.pos_ == "AUX" and token.head.pos_ == "VERB":
-                    current_vp_tokens.extend(get_non_subject_dependents(token.head))
-
-                if current_vp_tokens:
-                    current_vp_tokens.sort(key=lambda t: t.i)
-                    start_node = current_vp_tokens[0]
-                    end_node = current_vp_tokens[-1]
-                    start_char = start_node.idx
-                    end_char = end_node.idx + len(end_node.text)
-                    temp_verb_phrases.append(
-                        {
-                            "text": doc.text[
-                                start_char - sent_offset : end_char - sent_offset
-                            ],
-                            "start": start_char,
-                            "end": end_char,
-                        }
-                    )
-
+        # 前置詞句 (PP) の抽出を改善
         for token in doc:
-            if token.pos_ == "ADP" and any(c.dep_ == "pobj" for c in token.children):
-                pp_tokens = [token]
+            if token.pos_ == "ADP": # 前置詞
+                # 前置詞の目的語 (pobj) を探す
+                pobj_token = None
                 for child in token.children:
                     if child.dep_ == "pobj":
-                        pp_tokens.extend(list(child.subtree))
-
-                start_node = min(pp_tokens, key=lambda t: t.i)
-                end_node = max(pp_tokens, key=lambda t: t.i)
-                start_char = start_node.idx
-                end_char = end_node.idx + len(end_node.text)
-                temp_prepositional_phrases.append(
-                    {
-                        "text": doc.text[
-                            start_char - sent_offset : end_char - sent_offset
-                        ],
-                        "start": start_char,
-                        "end": end_char,
-                    }
-                )
-
-        def remove_subsets(phrases):
-            unique_phrases_by_span = {(p["start"], p["end"]): p for p in phrases}
-            phrases = list(unique_phrases_by_span.values())
-
-            result = []
-            for p1 in phrases:
-                is_subset = False
-                for p2 in phrases:
-                    if (p1["start"], p1["end"]) == (p2["start"], p2["end"]):
-                        continue
-                    if p2["start"] <= p1["start"] and p1["end"] <= p2["end"]:
-                        is_subset = True
+                        pobj_token = child
                         break
-                if not is_subset:
-                    result.append(p1)
-            return result
+                
+                if pobj_token:
+                    # 前置詞と目的語のサブツリー全体を含むスパンを形成
+                    pp_tokens = sorted(list(token.subtree), key=lambda t: t.i)
+                    
+                    start_id = pp_tokens[0].i
+                    end_id = pp_tokens[-1].i
+                    
+                    pp_text = doc[start_id : end_id + 1].text
+                    
+                    is_duplicate = False
+                    for existing_chunk in chunks_info:
+                        if existing_chunk['type'] == 'PP' and \
+                           existing_chunk['start_id'] == start_id and \
+                           existing_chunk['end_id'] == end_id:
+                           is_duplicate = True
+                           break
+                    
+                    if not is_duplicate:
+                        chunks_info.append({
+                            'type': 'PP',
+                            'text': pp_text,
+                            'start_id': start_id,
+                            'end_id': end_id
+                        })
 
-        verb_phrases = remove_subsets(temp_verb_phrases)
-        prepositional_phrases = remove_subsets(temp_prepositional_phrases)
+        # 副詞句 (ADVP) の抽出を改善
+        for token in doc:
+            if token.pos_ == "ADV": # 副詞
+                # 副詞とその修飾語（他の副詞など）を含むスパンを形成
+                advp_tokens = sorted(list(token.subtree), key=lambda t: t.i)
+                
+                start_id = advp_tokens[0].i
+                end_id = advp_tokens[-1].i
+                
+                advp_text = doc[start_id : end_id + 1].text
+                
+                is_duplicate = False
+                for existing_chunk in chunks_info:
+                    if existing_chunk['type'] == 'ADVP' and \
+                       existing_chunk['start_id'] == start_id and \
+                       existing_chunk['end_id'] == end_id:
+                       is_duplicate = True
+                       break
+                
+                if not is_duplicate:
+                    chunks_info.append({
+                        'type': 'ADVP',
+                        'text': advp_text,
+                        'start_id': start_id,
+                        'end_id': end_id
+                    })
+
+        # 句の重複とネストを考慮して最終的なchunks_infoを整理
+        # ここでremove_subsetsのようなロジックを適用して、より大きな句の中に含まれる小さな句を排除する
+        # ただし、implementation_plan.mdでは「ネストした句の表示も考慮する」とあるため、
+        # ここでは重複排除のみを行い、ネストの表示はdisplay_chunks側で処理する
+        
+        # start_idとend_idでソートし、重複を排除
+        # 同じ開始・終了IDを持つ句は一つだけ残す
+        unique_chunks = {}
+        for chunk in chunks_info:
+            key = (chunk['type'], chunk['start_id'], chunk['end_id'])
+            unique_chunks[key] = chunk
+        
+        chunks_info = list(unique_chunks.values())
+        
+        # 句の長さに応じてソート（長い句を優先して表示するため）
+        chunks_info.sort(key=lambda x: (x['end_id'] - x['start_id']), reverse=True)
+
+        print(f"DEBUG: tokens_info count: {len(tokens_info)}")
+        print(f"DEBUG: chunks_info count: {len(chunks_info)}")
+        print(f"DEBUG: first 3 tokens_info: {tokens_info[:3]}")
+        print(f"DEBUG: first 3 chunks_info: {chunks_info[:3]}")
 
         return {
             "original_text": doc.text,

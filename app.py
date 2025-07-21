@@ -14,20 +14,35 @@ analyzer = SentenceAnalyzer(nlp) # SentenceAnalyzerのインスタンスを作�
 # --- 2. 解析関数の定義 (analyzer.pyのSentenceAnalyzerを使用) ---
 def analyze_sentence(text):
     analyzed_data = analyzer.analyze_text(text)
-    if analyzed_data:
-        return analyzed_data[0] # analyzer.pyのanalyze_textが返す最初の文の解析結果をそのまま返す
-    else:
-        return {'tokens': [], 'chunks': []} # 解析結果がない場合
+    return analyzed_data # リスト全体を返す
 
 # --- 3. UI表示関数の定義 (今後のステップで実装) ---
+pos_colors = {
+    'NOUN': 'blue', 'VERB': 'red', 'ADJ': 'green', 'ADP': 'purple', 'DET': 'orange',
+    'ADV': 'brown', 'PRON': 'pink', 'AUX': 'cyan', 'PART': 'grey', 'CCONJ': 'lime',
+    'SCONJ': 'teal', 'INTJ': 'maroon', 'NUM': 'navy', 'PROPN': 'darkblue',
+    'SYM': 'olive', 'X': 'black', 'SPACE': 'lightgrey', 'PUNCT': 'darkgrey'
+}
+
 def get_pos_color(pos_tag):
-    colors = {
-        'NOUN': 'blue', 'VERB': 'red', 'ADJ': 'green', 'ADP': 'purple', 'DET': 'orange',
-        'ADV': 'brown', 'PRON': 'pink', 'AUX': 'cyan', 'PART': 'grey', 'CCONJ': 'lime',
-        'SCONJ': 'teal', 'INTJ': 'maroon', 'NUM': 'navy', 'PROPN': 'darkblue',
-        'SYM': 'olive', 'X': 'black', 'SPACE': 'lightgrey', 'PUNCT': 'darkgrey'
-    }
-    return colors.get(pos_tag, 'black')
+    return pos_colors.get(pos_tag, 'black')
+
+chunk_colors = {
+    'NP': '#ADD8E6', # LightBlue
+    'VP': '#DDA0DD', # Plum
+    'PP': '#90EE90', # LightGreen
+    'ADVP': '#FFB6C1' # LightPink
+}
+
+def get_chunk_color(chunk_type):
+    return chunk_colors.get(chunk_type, 'lightgrey')
+
+chunk_type_japanese_map = {
+    'NP': '名詞句 (Noun Phrase)',
+    'VP': '動詞句 (Verb Phrase)',
+    'PP': '前置詞句 (Prepositional Phrase)',
+    'ADVP': '副詞句 (Adverb Phrase)'
+}
 
 def display_tokens_default(tokens_info):
     html_string = ""
@@ -76,22 +91,6 @@ def display_dependency_tree(tokens_info):
         st.error(f"依存関係ツリーの表示中にエラーが発生しました: {e}")
         st.info("Graphvizが正しくインストールされているか確認してください。")
 
-def get_chunk_color(chunk_type):
-    colors = {
-        'NP': '#DDA0DD', # Plum
-        'VP': '#ADD8E6', # LightBlue
-        'PP': '#90EE90', # LightGreen
-        'ADVP': '#FFB6C1' # LightPink
-    }
-    return colors.get(chunk_type, 'lightgrey')
-
-chunk_type_japanese_map = {
-    'NP': '名詞句 (Noun Phrase)',
-    'VP': '動詞句 (Verb Phrase)',
-    'PP': '前置詞句 (Prepositional Phrase)',
-    'ADVP': '副詞句 (Adverb Phrase)'
-}
-
 def display_chunks(tokens_info, chunks_info):
     st.subheader("句構造")
     
@@ -118,6 +117,54 @@ def display_chunks(tokens_info, chunks_info):
         japanese_type = chunk_type_japanese_map.get(chunk['type'], chunk['type'])
         st.markdown(f"- **{japanese_type}**: `{chunk['text']}` (単語ID: {chunk['start_id']} - {chunk['end_id']})")
 
+# 期待される句構造データ (デバッグ用)
+expected_chunks_data = [
+    {"sentence": "The quick brown fox jumps over the lazy dog.", "chunks": [
+        {"type": "NP", "text": "The quick brown fox"},
+        {"type": "VP", "text": "jumps over the lazy dog"},
+        {"type": "PP", "text": "over the lazy dog"}
+    ]},
+    {"sentence": "He is running quickly in the park.", "chunks": [
+        {"type": "NP", "text": "He"},
+        {"type": "VP", "text": "is running quickly in the park"},
+        {"type": "ADVP", "text": "quickly"},
+        {"type": "PP", "text": "in the park"}
+    ]},
+    {"sentence": "She has been studying English very hard.", "chunks": [
+        {"type": "NP", "text": "She"},
+        {"type": "NP", "text": "English"},
+        {"type": "VP", "text": "has been studying English very hard"},
+        {"type": "ADVP", "text": "very hard"}
+    ]},
+    {"sentence": "They will go to the store to buy some groceries.", "chunks": [
+        {"type": "NP", "text": "They"},
+        {"type": "NP", "text": "the store"},
+        {"type": "NP", "text": "some groceries"},
+        {"type": "VP", "text": "will go to the store to buy some groceries"},
+        {"type": "VP", "text": "to buy some groceries"},
+        {"type": "PP", "text": "to the store"}
+    ]}
+]
+
+def display_expected_chunks(expected_data):
+    st.subheader("期待される句構造 (デバッグ用):")
+    for sent_data in expected_data:
+        st.markdown(f"**文:** `{sent_data['sentence']}`")
+        for chunk in sent_data['chunks']:
+            japanese_type = chunk_type_japanese_map.get(chunk['type'], chunk['type'])
+            st.markdown(f"- **{japanese_type}**: `{chunk['text']}`")
+    st.markdown("---")
+
+def display_color_legend():
+    st.sidebar.markdown("### 色分け凡例")
+    st.sidebar.markdown("#### 品詞 (POS)")
+    for pos, color in pos_colors.items():
+        st.sidebar.markdown(f"<span style='color: {color};'>■</span> {pos} ({analyzer.pos_map.get(pos, pos)})", unsafe_allow_html=True)
+    
+    st.sidebar.markdown("#### 句構造 (Chunk)")
+    for chunk_type, color in chunk_colors.items():
+        st.sidebar.markdown(f"<span style='background-color: {color}; padding: 2px 5px; border-radius: 3px;'>&nbsp;&nbsp;&nbsp;</span> {chunk_type_japanese_map.get(chunk_type, chunk_type)}", unsafe_allow_html=True)
+
 # --- 4. Streamlitアプリのメイン部分 ---
 st.set_page_config(layout="wide", page_title="英文解析ツール")
 
@@ -127,7 +174,7 @@ if 'analysis_result' not in st.session_state:
 
 st.title("英文解析ツール")
 
-input_text = st.text_area("解析したい英文を入力してください:", "The quick brown fox jumps over the lazy dog.", height=100)
+input_text = st.text_area("解析したい英文を入力してください:", "The quick brown fox jumps over the lazy dog. He is running quickly in the park. She has been studying English very hard. They will go to the store to buy some groceries.", height=100)
 
 if st.button("解析実行"):
     if input_text:
@@ -138,29 +185,39 @@ if st.button("解析実行"):
 
 # 解析結果がある場合のみ表示
 if st.session_state.analysis_result:
-    tokens = st.session_state.analysis_result['tokens']
-    chunks = st.session_state.analysis_result['chunks']
+    # 各文の解析結果をループして表示
+    for i, sentence_analysis in enumerate(st.session_state.analysis_result):
+        st.markdown(f"## 文 {i+1}: {sentence_analysis['original_text']}")
 
-    st.markdown("---")
-    st.header("1. 品詞情報")
+        tokens = sentence_analysis['tokens']
+        chunks = sentence_analysis['chunks']
 
-    show_detailed_pos = st.checkbox("詳細な品詞を表示 (クリックで詳細)", value=False)
-    if show_detailed_pos:
-        display_tokens_detailed(tokens)
-    else:
-        display_tokens_default(tokens)
-    
-    st.markdown("---")
-    st.header("2. 依存関係解析")
-    display_dependency_tree(tokens)
+        st.markdown("---")
+        st.header("1. 品詞情報")
 
-    st.markdown("---")
-    st.header("3. 句構造解析")
-    display_chunks(tokens, chunks)
+        show_detailed_pos = st.checkbox(f"文 {i+1} の詳細な品詞を表示 (クリックで詳細)", value=False, key=f"detailed_pos_{i}")
+        if show_detailed_pos:
+            display_tokens_detailed(tokens)
+        else:
+            display_tokens_default(tokens)
+        
+        st.markdown("---")
+        st.header("2. 依存関係解析")
+        display_dependency_tree(tokens)
+
+        st.markdown("---")
+        st.header("3. 句構造解析")
+        display_chunks(tokens, chunks)
+
+        # 期待される句構造のデバッグ表示 (該当する文のみ表示)
+        if i < len(expected_chunks_data):
+            display_expected_chunks([expected_chunks_data[i]])
+        st.markdown("---<br>---") # 各文の区切りを明確にする
 
 st.sidebar.markdown("### アプリケーション情報")
 st.sidebar.info("このツールはSpaCyライブラリを使用して英文の品詞、依存関係、句構造を解析し、視覚的に表示します。")
 st.sidebar.markdown("---")
+display_color_legend() # 色分け凡例の呼び出し
 st.sidebar.markdown("### 品詞の解説")
 st.sidebar.markdown("- **名詞 (NOUN)**: 人、場所、物、概念などを表す単語。")
 st.sidebar.markdown("- **動詞 (VERB)**: 動作や状態を表す単語。")

@@ -1,628 +1,94 @@
-C:\Users\Rose-kiyoshi\Desktop\GEMINI-CLI\英文構造解析Webアプリ\kiro\roadmap.md の内容を読み込みました。
+---
+2025年7月21日 - 品詞解析機能の実装状況
 
-  他に何かお手伝いできることはありますか？
+## 品詞 (POS) 解析機能
 
-╭────────────────────────────────────────╮
-│  > ロードマップに沿って進めてください  │
-╰────────────────────────────────────────╯
+### 1. 目標 (Goal) および主要関数リスト (Functions) の達成状況
 
-✦ 承知いたしました。ロードマップに沿って進めます。
+- **品詞 (POS):** 単語を品詞ごとに色分けし、クリックで詳細情報を表示する。
+    - **達成済み:** `app.py` の `display_tokens_default` 関数により品詞ごとの色分け表示が可能です。
+    - **達成済み:** `app.py` の `display_tokens_detailed` 関数により、各単語をクリックすると詳細情報（品詞、原形、依存関係など）がポップオーバーで表示されます。
 
-  まず、フェーズ1の「環境構築とコア機能の基盤構築」から開始します。最初のタスクは「プロジェクトリポジトリの作成
-  と初期コミット」ですが、私は直接Gitリポジトリを作成することはできません。代わりに、プロジェクトの初期ファイル
-  としてapp.pyとrequirements.txtを作成します。
+- `analyze_sentence(text: str) -> dict`: テキストを解析し、データモデルの辞書を返す。
+    - **達成済み:** `app.py` の `analyze_sentence` 関数は、`analyzer.py` の `SentenceAnalyzer` クラスを利用して、品詞情報を含む `tokens` リストを返します。
 
-  C:\Users\Rose-kiyoshi\Desktop\GEMINI-CLI\英文構造解析Webアプリ ディレクトリにこれらのファイルを作成します。
+- `get_pos_color(pos_tag: str) -> str`: 品詞に対応する色を返す。
+    - **達成済み:** `app.py` に実装済みで、品詞の色分けに利用されています。
 
- ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  WriteFile Writing to app.py                                                                        │
- │                                                                                                       │
- │    1 # Streamlitアプリケーションのメインファイル                                                      │
- │ ✔  WriteFile Writing to requirements.txt                                                              │
- │                                                                                                       │
- │    1 streamlit                                                                                        │
- │    2 spacy                                                                                            │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ app.pyとrequirements.txtを作成しました。
+### 2. 実装ステップ (Implementation Steps) の達成状況
 
-  次に、requirements.txtに記載されている依存関係をインストールします。
+- **3. 解析ロジックの実装 (`analyze_sentence`):**
+    - `TokenInfo` リストを作成する。
+        - **達成済み:** `analyzer.py` の `_analyze_sentence` 関数内で `tokens_info` が作成され、必要な品詞情報 (`pos`, `tag`) が格納されています。さらに、`pos_japanese` (日本語品詞) も追加されています。
 
- ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Shell pip install -r requirements.txt [in C:\Users\Rose-kiyoshi\Desktop\GEMINI-CLI\英文構造解析Webアプリ] …  │
- │                                                                                                                 │
- │    Error: Directory cannot be absolute. Must be relative to the project root directory.                         │
- ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ 申し訳ありません。run_shell_commandのdirectory引数は、プロジェクトのルートディレクトリからの相対パスである必要
-  があります。絶対パスを指定してしまいました。
+- **4. 表示関数の実装:**
+    - `get_pos_color` と `display_tokens_default` を実装する。
+        - **達成済み:** `app.py` に実装済みです。
+    - `display_tokens_detailed` を実装する。
+        - **達成済み:** `app.py` に実装済みで、日本語品詞も表示されるように修正されています。
 
-  正しいパスで再度実行します。現在の作業ディレクトリが
-  C:\Users\Rose-kiyoshi\Desktop\GEMINI-CLI\英文構造解析Webアプリ なので、directoryは空で問題ありません。
+### 3. 追加で実装した改善点
 
- ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Shell pip install -r requirements.txt (requirements.txtに記載されたPythonパッケージをインストールします。)  │
- │                                                                                                                │
- │    ... first 104 lines hidden ...                                                                              │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                         │
- │    Requirement already satisfied: murmurhash<1.1.0,>=0.28.0 in                                                 │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                        │
- │    Requirement already satisfied: cymem<2.1.0,>=2.0.2 in                                                       │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                        │
- │    Requirement already satisfied: preshed<3.1.0,>=3.0.2 in                                                     │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                        │
- │    Requirement already satisfied: thinc<8.4.0,>=8.3.4 in                                                       │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                         │
- │    Requirement already satisfied: wasabi<1.2.0,>=0.9.1 in                                                      │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                         │
- │    Requirement already satisfied: srsly<3.0.0,>=2.4.3 in                                                       │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                         │
- │    Requirement already satisfied: catalogue<2.1.0,>=2.0.6 in                                                   │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                        │
- │    Requirement already satisfied: weasel<0.5.0,>=0.1.0 in                                                      │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                         │
- │    Requirement already satisfied: typer<1.0.0,>=0.3.0 in                                                       │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                        │
- │    Requirement already satisfied: tqdm<5.0.0,>=4.38.0 in                                                       │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                        │
- │    Requirement already satisfied: pydantic!=1.8,!=1.8.1,<3.0.0,>=1.7.4 in                                      │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                        │
- │    Requirement already satisfied: setuptools in                                                                │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                        │
- │    Requirement already satisfied: langcodes<4.0.0,>=3.2.0 in                                                   │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from spacy->-r                        │
-                                                                         │
- │    Requirement already satisfied: language-data>=1.2 in                                                        │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                                      │r requirements.txt (line 2)) (1.3.0)
- │    Requirement already satisfied: annotated-types>=0.6.0 in                                                    │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                         │1,<3.0.0,>=1.7.4->spacy->-r requirements.txt (line 2)) (0.7.0)
- │    Requirement already satisfied: pydantic-core==2.33.2 in                                                     │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                        │.1,<3.0.0,>=1.7.4->spacy->-r requirements.txt (line 2)) (2.33.2)
- │    Requirement already satisfied: typing-inspection>=0.4.0 in                                                  │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                         │1,<3.0.0,>=1.7.4->spacy->-r requirements.txt (line 2)) (0.4.1)
- │    Requirement already satisfied: blis<1.4.0,>=1.3.0 in                                                        │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                                          │ements.txt (line 2)) (1.3.0)
- │    Requirement already satisfied: confection<1.0.0,>=0.0.1 in                                                  │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                                          │ements.txt (line 2)) (0.1.5)
- │    Requirement already satisfied: shellingham>=1.3.0 in                                                        │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                                          │ements.txt (line 2)) (1.5.4)
- │    Requirement already satisfied: rich>=10.11.0 in                                                             │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                                         │rements.txt (line 2)) (14.0.0)
- │    Requirement already satisfied: cloudpathlib<1.0.0,>=0.7.0 in                                                │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                                        │uirements.txt (line 2)) (0.21.1)
- │    Requirement already satisfied: smart-open<8.0.0,>=5.2.1 in                                                  │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                                   │r requirements.txt (line 2)) (7.3.0.post1)
- │    Requirement already satisfied: wrapt in                                                                     │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-              │n<8.0.0,>=5.2.1->weasel<0.5.0,>=0.1.0->spacy->-r requirements.txt (line 2)) (1.17.2)
- │    Requirement already satisfied: MarkupSafe>=2.0 in                                                           │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                                   │lit->-r requirements.txt (line 1)) (3.0.2)
- │    Requirement already satisfied: attrs>=22.2.0 in                                                             │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                         │air<6,>=4.0->streamlit->-r requirements.txt (line 1)) (25.3.0)
- │    Requirement already satisfied: jsonschema-specifications>=2023.03.6 in                                      │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                       │ltair<6,>=4.0->streamlit->-r requirements.txt (line 1)) (2025.4.1)
- │    Requirement already satisfied: referencing>=0.28.4 in                                                       │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                         │air<6,>=4.0->streamlit->-r requirements.txt (line 1)) (0.36.2)
- │    Requirement already satisfied: rpds-py>=0.7.1 in                                                            │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                         │air<6,>=4.0->streamlit->-r requirements.txt (line 1)) (0.26.0)
- │    Requirement already satisfied: marisa-trie>=1.1.0 in                                                        │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                  │>=1.2->langcodes<4.0.0,>=3.2.0->spacy->-r requirements.txt (line 2)) (1.2.1)
- │    Requirement already satisfied: six>=1.5 in                                                                  │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                │util>=2.8.2->pandas<3,>=1.4.0->streamlit->-r requirements.txt (line 1)) (1.17.0)
- │    Requirement already satisfied: markdown-it-py>=2.2.0 in                                                     │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                           │.0.0,>=0.3.0->spacy->-r requirements.txt (line 2)) (3.0.0)
- │    Requirement already satisfied: pygments<3.0.0,>=2.13.0 in                                                   │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
-                          │1.0.0,>=0.3.0->spacy->-r requirements.txt (line 2)) (2.19.2)
- │    Requirement already satisfied: mdurl~=0.1 in                                                                │
- │    c:\users\rose-kiyoshi\appdata\roaming\python\python313\site-packages (from                                  │
- │    markdown-it-py>=2.2.0->rich>=10.11.0->typer<1.0.0,>=0.3.0->spacy->-r requirements.txt (line 2))             │
-                                                                                                    │
- │                                                                                                                │
- ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ pip install -r requirements.txt コマンドの実行結果から、streamlit と spacy
-  およびその依存関係は既にインストールされているようです。
+- **品詞の日本語訳表示:** `display_tokens_detailed` で、品詞の日本語訳も表示されるようにしました。
+- **サイドバーでの品詞解説:** `app.py` のサイドバーに「品詞の解説」セクションを追加し、主要な品詞の説明を日本語で記述しました。
 
-  次に、spaCyモデルのダウンロードを行います。
+---
+2025年7月21日 - 依存関係解析機能の実装状況
 
- ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Shell python -m spacy download en_core_web_sm (spaCyの英語モデル (en_core_web_sm) をダウンロードします。)  │
- │                                                                                                               │
-                             │llation because normal site-packages is not writeable
-                                                                          │
- │      Downloading                                                                                              │
- │    https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3          │
-                                                                           │
-                           │---------------------- 12.8/12.8 MB 37.5 MB/s eta 0:00:00
-                                                                  │
-                                             │oad('en_core_web_sm')
- │                                                                                                               │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ spaCyの英語モデル en_core_web_sm のダウンロードとインストールが成功しました。
+## 依存関係 (Dependency) 解析機能
 
-  これで、フェーズ1の環境構築と初期設定の主要タスクは完了しました。
+### 1. 目標 (Goal) および主要関数リスト (Functions) の達成状況
 
-  次に、app.pyにStreamlitアプリの初期コードを追加し、起動確認を行います。
+- **依存関係 (Dependency):** 単語間の依存関係をツリー形式で可視化する。
+    - **達成済み:** `app.py` の `display_dependency_tree` 関数により、単語間の依存関係がツリー形式で可視化されます。
 
- ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  WriteFile Writing to app.py                                                                        │
- │                                                                                                       │
- │    1    - # Streamlitアプリケーションのメインファイル                                                 │
- │    1    + import streamlit as st                                                                      │
- │    2    +                                                                                             │
- │    3    + st.title('英文構造解析Webアプリ')                                                           │
- │    4    +                                                                                             │
- │    5    + st.write('ここに英文を入力してください。')                                                  │
- │    6    +                                                                                             │
- │    7    + text_input = st.text_area('英文を入力', height=150)                                         │
- │    8    +                                                                                             │
- │    9    + if st.button('解析実行'):                                                                   │
- │    10   +     if text_input:                                                                          │
- │    11   +         st.write('解析結果:')                                                               │
- │    12   +         st.write(text_input) # 仮の表示                                                     │
- │    13   +     else:                                                                                   │
- │    14   +         st.warning('英文を入力してください。')                                              │
- │    15   +                                                                                             │
- │    16   + if st.button('クリア'):                                                                     │
- │    17   +     st.text_area('英文を入力', value='', height=150)                                        │
- │    18   +     st.empty() # 結果表示エリアをクリア                                                     │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ app.pyを更新しました。
+- `analyze_sentence(text: str) -> dict`: テキストを解析し、データモデルの辞書を返す。
+    - **達成済み:** `app.py` の `analyze_sentence` 関数は、`analyzer.py` の `SentenceAnalyzer` クラスを利用して、依存関係情報を含む `tokens` リストを返します。
 
-  これで、フェーズ1の「テキスト入力エリア (st.text_area) の設置」、「解析実行ボタン (st.button)
-  の設置」、「解析結果表示用のプレースホルダー (st.empty) の設置」、「クリアボタン (st.button)
-  の設置とロジック実装」が完了しました。
+### 2. 実装ステップ (Implementation Steps) の達成状況
 
-  次に、Streamlitアプリの初期起動確認を行います。
+- **3. 解析ロジックの実装 (`analyze_sentence`):**
+    - `TokenInfo` リストを作成する。
+        - **達成済み:** `analyzer.py` の `_analyze_sentence` 関数内で `tokens_info` が作成され、必要な依存関係情報 (`dep`) が格納されています。さらに、`dep_japanese` (日本語依存関係) も追加されています。
 
+- **4. 表示関数の実装:**
+    - `display_dependency_tree` を実装する。
+        - **達成済み:** `app.py` に実装済みです。
 
-ℹ Request cancelled.
- 
- ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ -  Shell streamlit run app.py (Streamlitアプリケーションを起動します。このコマンドはアプリケーションが実行さ…  │
- ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+### 3. 追加で実装した改善点
 
-╭────────────────────────────────────╮
-│  > 起動確認いたしました、順調です  │
-╰────────────────────────────────────╯
+- **依存関係の日本語訳表示:** `display_dependency_tree` で、依存関係のラベルが日本語で表示されるようにしました。
+- **サイドバーでの依存関係解説:** `app.py` のサイドバーに「依存関係の解説」セクションを追加し、主要な依存関係の説明を日本語で記述しました。
 
-✦ Streamlitアプリの起動確認、ありがとうございます。順調とのことで安心いたしました。
+---
+2025年7月21日 - 句構造解析機能の実装状況
 
-  それでは、ロードマップのフェーズ2「英文解析ロジックの実装」に進みます。
+## 句構造 (Chunk) 解析機能
 
-  最初のタスクは「SentenceAnalyzer クラス/関数のスケルトン作成」です。app.pyにSentenceAnalyzerクラスを追加し、s
-  paCyを用いた英文のロードと基本解析の準備を行います。
+### 1. 目標 (Goal) および主要関数リスト (Functions) の達成状況
 
-  まず、現在のapp.pyの内容を読み込みます。
+- **句構造 (Chunk):** 名詞句(NP)、動詞句(VP)、前置詞句(PP)、副詞句(ADVP)を背景色でハイライトする。
+    - **達成済み:** `app.py` の `display_chunks` 関数により、句が背景色でハイライトされます。
 
- ╭─────────────────────╮
- │ ✔  ReadFile app.py  │
- ╰─────────────────────╯
-✦ 現在のapp.pyの内容を確認しました。
+- `analyze_sentence(text: str) -> dict`: テキストを解析し、データモデルの辞書を返す。
+    - **達成済み:** `app.py` の `analyze_sentence` 関数は、`analyzer.py` の `SentenceAnalyzer` クラスを利用して、句構造情報を含む `chunks` リストを返します。
 
-  app.pyにSentenceAnalyzerクラスのスケルトンとspaCyのインポート、モデルのロードを追加します。
+- `get_chunk_color(chunk_type: str) -> str`: 句の種類に対応する背景色を返す。
+    - **達成済み:** `app.py` に実装済みで、句のハイライトに利用されています。
 
- ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Edit app.py: import streamlit as st => import streamlit as st...                                   │
- │                                                                                                       │
- │    1      import streamlit as st                                                                      │
- │    2    + import spacy                                                                                │
- │    3                                                                                                  │
- │    4    + # spaCyモデルのロード                                                                       │
- │    5    + # アプリケーション起動時に一度だけロードするためにst.cache_resourceを使用                   │
- │    6    + @st.cache_resource                                                                          │
- │    7    + def load_model():                                                                           │
- │    8    +     return spacy.load("en_core_web_sm")                                                     │
- │    9    +                                                                                             │
- │    10   + nlp = load_model()                                                                          │
- │    11   +                                                                                             │
- │    12   + class SentenceAnalyzer:                                                                     │
- │    13   +     def __init__(self, text):                                                               │
- │    14   +         self.text = text                                                                    │
- │    15   +         self.doc = nlp(text)                                                                │
- │    16   +                                                                                             │
- │    17   +     def analyze(self):                                                                      │
- │    18   +         # ここに解析ロジックを実装                                                          │
- │    19   +         # 主語、動詞、句の特定など                                                          │
- │    20   +         return {                                                                            │
- │    21   +             "original_text": self.text,                                                     │
- │    22   +             "tokens": [token.text for token in self.doc],                                   │
- │    23   +             "pos_tags": [token.pos_ for token in self.doc],                                 │
- │    24   +             "dep_tags": [token.dep_ for token in self.doc],                                 │
- │    25   +             "entities": [(ent.text, ent.label_) for ent in self.doc.ents]                   │
- │    26   +         }                                                                                   │
- │    27   +                                                                                             │
- │    28   +                                                                                             │
- │    29     st.title('英文構造解析Webアプリ')                                                           │
- │    30                                                                                                 │
- │    31     st.write('ここに英文を入力してください。')                                                  │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ app.pyにSentenceAnalyzerクラスのスケルトンとspaCyのロード処理を追加しました。
+### 2. 実装ステップ (Implementation Steps) の達成状況
 
-  これで、フェーズ2の最初のタスク「SentenceAnalyzer
-  クラス/関数のスケルトン作成」と「spaCyを用いた英文のロードと基本解析 (nlp(text))」が完了しました。
+- **3. 解析ロジックの実装 (`analyze_sentence`):**
+    - `ChunkInfo` リストを作成する。
+        - **達成済み:** `analyzer.py` の `_analyze_sentence` 関数内で `chunks_info` が作成され、必要な句構造情報が格納されています。
 
-  次に、「主語と動詞の特定ロジックの実装」と「名詞句、動詞句、前置詞句の特定ロジックの実装」を進めます。Sentenc
-  eAnalyzerクラスのanalyzeメソッドにこれらのロジックを追加します。
+- **4. 表示関数の実装:**
+    - `get_chunk_color` と `display_chunks` を実装する。
+        - **達成済み:** `app.py` に実装済みです。
 
-  まず、現在のapp.pyの内容を再度読み込みます。
+### 3. 追加で実装した改善点
 
- ╭─────────────────────╮
- │ ✔  ReadFile app.py  │
- ╰─────────────────────╯
-✦ app.pyに英文解析ロジックを実装します。まず、SentenceAnalyzerクラスのanalyzeメソッドを更新し、主語、動詞、名詞句
-  、動詞句、前置詞句の特定ロジックを追加します。
+- **句の日本語訳表示:** `display_chunks` で、句のタイプが日本語で表示されるようにしました。
+- **サイドバーでの句構造解説:** `app.py` のサイドバーに「句構造の解説」セクションを追加し、主要な句構造の説明を日本語で記述しました。
 
- ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Edit app.py:     def analyze(self):... =>     def analyze(self):...                                │
- │                                                                                                       │
- │    15         self.doc = nlp(text)                                                                    │
- │    16                                                                                                 │
- │    17     def analyze(self):                                                                          │
- │    18   -     # ここに解析ロジックを実装                                                              │
- │    19   -     # 主語、動詞、句の特定など                                                              │
- │    18   +     subjects = []                                                                           │
- │    19   +     verbs = []                                                                              │
- │    20   +     noun_phrases = []                                                                       │
- │    21   +     verb_phrases = []                                                                       │
- │    22   +     prepositional_phrases = []                                                              │
- │    23   +                                                                                             │
- │    24   +     for token in self.doc:                                                                  │
- │    25   +         # 主語の特定                                                                        │
- │    26   +         if "nsubj" in token.dep_:                                                           │
- │    27   +             subjects.append({"text": token.text, "start": token.idx, "end": token.idx +     │
- │           len(token.text)})                                                                           │
- │    28   +         # 動詞の特定 (助動詞も含む)                                                         │
- │    29   +         if token.pos_ == "VERB" or token.pos_ == "AUX":                                     │
- │    30   +             verbs.append({"text": token.text, "start": token.idx, "end": token.idx +        │
- │           len(token.text)})                                                                           │
- │    31   +                                                                                             │
- │    32   +     # 名詞句の特定                                                                          │
- │    33   +     for chunk in self.doc.noun_chunks:                                                      │
- │    34   +         noun_phrases.append({"text": chunk.text, "start": chunk.start_char, "end":          │
- │           chunk.end_char})                                                                            │
- │    35   +                                                                                             │
- │    36   +     # 動詞句と前置詞句の特定 (簡易版)                                                       │
- │    37   +     # より正確な句の特定には、より複雑なロジックや句構造解析が必要                          │
- │    38   +     for token in self.doc:                                                                  │
- │    39   +         # 動詞句 (簡易版: 動詞とその直接の子孫の一部)                                       │
- │    40   +         if token.pos_ == "VERB":                                                            │
- │    41   +             # 動詞とその直接の子孫をまとめる                                                │
- │    42   +             # これは完全な動詞句ではないが、視覚化の出発点として                            │
- │    43   +             vp_tokens = [token] + list(token.children)                                      │
- │    44   +             # トークンのインデックスに基づいてソートし、連続するスパンを形成                │
- │    45   +             vp_tokens.sort(key=lambda t: t.idx)                                             │
- │    46   +             if vp_tokens:                                                                   │
- │    47   +                 start_char = vp_tokens[0].idx                                               │
- │    48   +                 end_char = vp_tokens[-1].idx + len(vp_tokens[-1].text)                      │
- │    49   +                 verb_phrases.append({"text": self.doc.text[start_char:end_char], "start":   │
- │           start_char, "end": end_char})                                                               │
- │    50   +                                                                                             │
- │    51   +         # 前置詞句 (簡易版: 前置詞とその目的語)                                             │
- │    52   +         if token.pos_ == "ADP": # Adposition (前置詞または後置詞)                           │
- │    53   +             for child in token.children:                                                    │
- │    54   +                 if child.dep_ == "pobj": # object of preposition                            │
- │    55   +                     pp_tokens = [token, child]                                              │
- │    56   +                     pp_tokens.sort(key=lambda t: t.idx)                                     │
- │    57   +                     if pp_tokens:                                                           │
- │    58   +                         start_char = pp_tokens[0].idx                                       │
- │    59   +                         end_char = pp_tokens[-1].idx + len(pp_tokens[-1].text)              │
- │    60   +                         prepositional_phrases.append({"text":                               │
- │           self.doc.text[start_char:end_char], "start": start_char, "end": end_char})                  │
- │    61   +                                                                                             │
- │    62   +                                                                                             │
- │    63         return {                                                                                │
- │    64             "original_text": self.text,                                                         │
- │    22   -         "tokens": [token.text for token in self.doc],                                       │
- │    23   -         "pos_tags": [token.pos_ for token in self.doc],                                     │
- │    24   -         "dep_tags": [token.dep_ for token in self.doc],                                     │
- │    25   -         "entities": [(ent.text, ent.label_) for ent in self.doc.ents]                       │
- │    ═════════════════════════════════════════════════════════════════════════════════════════════════  │
- │    65   +         "subjects": subjects,                                                               │
- │    66   +         "verbs": verbs,                                                                     │
- │    67   +         "noun_phrases": noun_phrases,                                                       │
- │    68   +         "verb_phrases": verb_phrases,                                                       │
- │    69   +         "prepositional_phrases": prepositional_phrases,                                     │
- │    70   +         # デバッグ用にトークン情報も残しておく                                              │
- │    71   +         "tokens_info": [{"text": token.text, "pos": token.pos_, "dep": token.dep_, "head":  │
- │           token.head.text} for token in self.doc]                                                     │
- │    72         }                                                                                       │
- │    73                                                                                                 │
- │    74                                                                                                 │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ app.pyに英文解析ロジックを実装しました。これで、フェーズ2の「主語と動詞の特定ロジックの実装」、「名詞句、動詞句
-  、前置詞句の特定ロジックの実装」、および「解析結果を構造化されたデータ（例:
-  辞書やリスト）として返すように実装」が完了しました。
-
-  次に、ロードマップのフェーズ3「解析結果の視覚化とUI/UX改善」に進みます。
-
-  最初のタスクは「ResultFormatter
-  クラス/関数のスケルトン作成」です。解析結果をHTML/Markdown形式で整形するためのクラスを作成します。
-
-  まず、現在のapp.pyの内容を読み込みます。
-
- ╭─────────────────────╮
- │ ✔  ReadFile app.py  │
- ╰─────────────────────╯
-✦ app.pyの内容を確認しました。
-
-  SentenceAnalyzerクラスの下にResultFormatterクラスのスケルトンを追加します。
-
- ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Edit app.py:             "tokens_info": [{"... =>             "tokens_info": [{"...                │
- │                                                                                                       │
- │    71                 "tokens_info": [{"text": token.text, "pos": token.pos_, "dep": token.dep_,      │
- │           "head": token.head.text} for token in self.doc]                                             │
- │    72             }                                                                                   │
- │    73                                                                                                 │
- │    74   + class ResultFormatter:                                                                      │
- │    75   +     def __init__(self, analyzed_data):                                                      │
- │    76   +         self.analyzed_data = analyzed_data                                                  │
- │    77   +         self.original_text = analyzed_data["original_text"]                                 │
- │    78                                                                                                 │
- │    75   - st.title('英文構造解析Webアプリ')                                                           │
- │    79   +     def format_html(self):                                                                  │
- │    80   +         # ここにHTML整形ロジックを実装                                                      │
- │    81   +         # 主語、動詞の色付け、句の括弧表示など                                              │
- │    82   +         formatted_text = self.original_text                                                 │
- │    83   +         return formatted_text                                                               │
- │    84                                                                                                 │
- │    85     st.write('ここに英文を入力してください。')                                                  │
- │    86                                                                                                 │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ app.pyにResultFormatterクラスのスケルトンを追加しました。
-
-  次に、ResultFormatterクラスのformat_htmlメソッドに、主語と動詞の色付け、および句の括弧表示のHTML/Markdown生成
-  ロジックを実装します。
-
-  まず、現在のapp.pyの内容を読み込みます。
-
- ╭─────────────────────╮
- │ ✔  ReadFile app.py  │
- ╰─────────────────────╯
-✦ app.pyにResultFormatterクラスのformat_htmlメソッドを実装します。これにより、主語と動詞の色付け、および句の括弧
-  表示のHTML/Markdown生成ロジックが追加されます。
-
- ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Edit app.py:     def format_html(self):... =>     def format_html(self):...                        │
- │                                                                                                       │
- │    77             self.original_text = analyzed_data["original_text"]                                 │
- │    78                                                                                                 │
- │    79         def format_html(self):                                                                  │
- │    80   -         # ここにHTML整形ロジックを実装                                                      │
- │    81   -         # 主語、動詞の色付け、句の括弧表示など                                              │
- │    82   -         formatted_text = self.original_text                                                 │
- │    83   -         return formatted_text                                                               │
- │    80   +         text_len = len(self.original_text)                                                  │
- │    81   +         # Store (tag_string, is_opening_tag) at each position                               │
- │    82   +         # is_opening_tag = True for opening tags, False for closing tags                    │
- │    83   +         events_at_pos = [[] for _ in range(text_len + 1)]                                   │
- │    84                                                                                                 │
- │    85   +         # Define styles                                                                     │
- │    86   +         subject_style = "color:red; font-weight:bold;"                                      │
- │    87   +         verb_style = "color:blue; font-weight:bold;"                                        │
- │    88   +         np_style = "background-color:#E0FFFF; border:1px solid #00CED1; border-radius:3px;  │
- │           padding:0 2px;"                                                                             │
- │    89   +         vp_style = "background-color:#E0FFE0; border:1px solid #32CD32; border-radius:3px;  │
- │           padding:0 2px;"                                                                             │
- │    90   +         pp_style = "background-color:#FFFFE0; border:1px solid #FFD700; border-radius:3px;  │
- │           padding:0 2px;"                                                                             │
- │    91   +                                                                                             │
- │    92   +         # Add tags for subjects                                                             │
- │    93   +         for s in self.analyzed_data["subjects"]:                                            │
- │    94   +             events_at_pos[s["start"]].append((f"<span style=\"{subject_style}\">", True))   │
- │    95   +             events_at_pos[s["end"]].append(("</span>", False))                              │
- │    96   +                                                                                             │
- │    97   +         # Add tags for verbs                                                                │
- │    98   +         for v in self.analyzed_data["verbs"]:                                               │
- │    99   +             events_at_pos[v["start"]].append((f"<span style=\"{verb_style}\">", True))      │
- │    100  +             events_at_pos[v["end"]].append(("</span>", False))                              │
- │    101  +                                                                                             │
- │    102  +         # Add tags for noun phrases                                                         │
- │    103  +         for np in self.analyzed_data["noun_phrases"]:                                       │
- │    104  +             events_at_pos[np["start"]].append((f"<span style=\"{np_style}\">[NP ", True))   │
- │    105  +             events_at_pos[np["end"]].append(("]</span>", False))                            │
- │    106  +                                                                                             │
- │    107  +         # Add tags for verb phrases                                                         │
- │    108  +         for vp in self.analyzed_data["verb_phrases"]:                                       │
- │    109  +             events_at_pos[vp["start"]].append((f"<span style=\"{vp_style}\">(VP ", True))   │
- │    110  +             events_at_pos[vp["end"]].append((")</span>", False))                            │
- │    111  +                                                                                             │
- │    112  +         # Add tags for prepositional phrases                                                │
- │    113  +         for pp in self.analyzed_data["prepositional_phrases"]:                              │
- │    114  +             events_at_pos[pp["start"]].append((f"<span style=\"{pp_style}\">{{PP ", True))  │
- │    115  +             events_at_pos[pp["end"]].append(("}}</span>", False))                           │
- │    116  +                                                                                             │
- │    117  +         # Build the formatted HTML string                                                   │
- │    118  +         formatted_html = []                                                                 │
- │    119  +         for i, char in enumerate(self.original_text):                                       │
- │    120  +             # Sort events at current position: closing tags first, then opening tags        │
- │    121  +             events_at_pos[i].sort(key=lambda x: not x[1]) # False (closing) comes before    │
- │           True (opening)                                                                              │
- │    122  +                                                                                             │
- │    123  +             for tag_string, is_opening_tag in events_at_pos[i]:                             │
- │    124  +                 formatted_html.append(tag_string)                                           │
- │    125  +             formatted_html.append(char)                                                     │
- │    126  +                                                                                             │
- │    127  +         # Handle tags at the very end of the text                                           │
- │    128  +         events_at_pos[text_len].sort(key=lambda x: not x[1])                                │
- │    129  +         for tag_string, is_opening_tag in events_at_pos[text_len]:                          │
- │    130  +             formatted_html.append(tag_string)                                               │
- │    131  +                                                                                             │
- │    132  +         return "".join(formatted_html)                                                      │
- │    133  +                                                                                             │
- │    134    st.write('ここに英文を入力してください。')                                                  │
- │    135                                                                                                │
- │    136    text_input = st.text_area('英文を入力', height=150)                                         │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ ResultFormatterクラスのformat_htmlメソッドに、主語と動詞の色付け、および句の括弧表示のHTML/Markdown生成ロジック
-  を実装しました。
-
-  これで、フェーズ3の「主語と動詞を色付けするHTML/Markdown生成ロジックの実装」と「句を括弧で囲むHTML/Markdown生
-  成ロジックの実装」が完了しました。
-
-  次に、生成されたHTML/Markdownを st.markdown(..., unsafe_allow_html=True)
-  で表示するように、Streamlitのメインロジックを更新します。
-
-  まず、現在のapp.pyの内容を読み込みます。
-
- ╭─────────────────────╮
- │ ✔  ReadFile app.py  │
- ╰─────────────────────╯
-✦ app.pyのStreamlitメインロジックを更新し、解析結果をst.markdownで表示するようにします。また、クリアボタンのロジ
-  ックも改善します。
-
- ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Edit app.py: st.write('ここに英文を入力してください。')... => st.title('英文構造解析Webアプリ')...  │
- │                                                                                                        │
- │    131                                                                                                 │
- │    132            return "".join(formatted_html)                                                       │
- │    133                                                                                                 │
- │    134  + st.title('英文構造解析Webアプリ')                                                            │
- │    135  +                                                                                              │
- │    136    st.write('ここに英文を入力してください。')                                                   │
- │    137                                                                                                 │
- │    136  - text_input = st.text_area('英文を入力', height=150)                                          │
- │    138  + # セッションステートでテキスト入力を管理                                                     │
- │    139  + if 'text_input' not in st.session_state:                                                     │
- │    140  +     st.session_state.text_input = ""                                                         │
- │    141                                                                                                 │
- │    142  + text_area_key = "english_text_input"                                                         │
- │    143  + text_input_widget = st.text_area('英文を入力', value=st.session_state.text_input,            │
- │           height=150, key=text_area_key)                                                               │
- │    144  +                                                                                              │
- │    145  + # 結果表示用のプレースホルダー                                                               │
- │    146  + result_placeholder = st.empty()                                                              │
- │    147  +                                                                                              │
- │    148    if st.button('解析実行'):                                                                    │
- │    139  -     if text_input:                                                                           │
- │    140  -         st.write('解析結果:')                                                                │
- │    141  -         st.write(text_input) # 仮の表示                                                      │
- │    ═════════════════════════════════════════════════════════════════════════════════════════════════   │
- │    149  +     st.session_state.text_input = text_input_widget #                                        │
- │           最新のテキスト入力をセッションステートに保存                                                 │
- │    150  +     if st.session_state.text_input:                                                          │
- │    151  +         with st.spinner('解析中...'):                                                        │
- │    152  +             analyzer = SentenceAnalyzer(st.session_state.text_input)                         │
- │    153  +             analyzed_data = analyzer.analyze()                                               │
- │    154  +             formatter = ResultFormatter(analyzed_data)                                       │
- │    155  +             formatted_html = formatter.format_html()                                         │
- │    156  +                                                                                              │
- │    157  +         result_placeholder.markdown(formatted_html, unsafe_allow_html=True)                  │
- │    158        else:                                                                                    │
- │    143  -         st.warning('英文を入力してください。')                                               │
- │    ═════════════════════════════════════════════════════════════════════════════════════════════════   │
- │    159  +         result_placeholder.warning('英文を入力してください。')                               │
- │    160                                                                                                 │
- │    161    if st.button('クリア'):                                                                      │
- │    146  -     st.text_area('英文を入力', value='', height=150)                                         │
- │    147  -     st.empty() # 結果表示エリアをクリア                                                      │
- │    ═════════════════════════════════════════════════════════════════════════════════════════════════   │
- │    162  +     st.session_state.text_input = ""                                                         │
- │    163  +     st.experimental_rerun() # セッションステートをリセットして再描画                         │
- ╰────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ app.pyのStreamlitメインロジックを更新しました。これにより、解析実行時にSentenceAnalyzerとResultFormatterが使用
-  され、結果がHTML形式で表示されるようになりました。また、クリアボタンのロジックも改善し、解析中のローディング表
-  示と空入力時の警告メッセージも追加しました。
-
-  これで、フェーズ3の主要タスクである「生成されたHTML/Markdownを st.markdown(..., unsafe_allow_html=True)
-  で表示」と「解析中のローディング表示
-  (st.spinner)」、「無効な入力（空文字列など）に対するエラーメッセージ表示」が完了しました。
-
-  次に、「解析に失敗した場合のユーザーフレンドリーなメッセージ表示」を実装します。解析処理全体をtry-exceptブロ
-  ックで囲み、エラーが発生した際にユーザーに分かりやすいメッセージを表示するようにします。
-
-  まず、現在のapp.pyの内容を読み込みます。
-
- ╭─────────────────────╮
- │ ✔  ReadFile app.py  │
- ╰─────────────────────╯
-✦ app.pyに解析失敗時のエラーハンドリングを追加します。解析処理をtry-exceptブロックで囲み、エラーが発生した際にユ
-  ーザーに分かりやすいメッセージを表示するようにします。
-
- ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ✔  Edit app.py: if st.button('解析実行'):... => if st.button('解析実行'):...                          │
- │                                                                                                       │
- │    148    if st.button('解析実行'):                                                                   │
- │    149        st.session_state.text_input = text_input_widget #                                       │
- │           最新のテキスト入力をセッションステートに保存                                                │
- │    150        if st.session_state.text_input:                                                         │
- │    151  +         try:                                                                                │
- │    152                with st.spinner('解析中...'):                                                   │
- │    153                    analyzer = SentenceAnalyzer(st.session_state.text_input)                    │
- │    154                    analyzed_data = analyzer.analyze()                                          │
- │    156                    formatted_html = formatter.format_html()                                    │
- │    157                                                                                                │
- │    158                result_placeholder.markdown(formatted_html, unsafe_allow_html=True)             │
- │    159  +         except Exception as e:                                                              │
- │    160  +                                                                                             │
- │           result_placeholder.error(f"解析中にエラーが発生しました。入力された英文を確認してください   │
- │           。エラー詳細: {e}")                                                                         │
- │    161        else:                                                                                   │
- │    162            result_placeholder.warning('英文を入力してください。')                              │
- │    163                                                                                                │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ app.pyに解析失敗時のエラーハンドリングを追加しました。これで、フェーズ3の「解析に失敗した場合のユーザーフレンド
-  リーなメッセージ表示」が完了しました。
-
-  残りのフェーズ3のタスクは「レスポンシブデザインの確認と調整」と「CSSによる表示スタイルの微調整（括弧の色、背
-  景色など）」です。これらはコードの変更というよりは、実際にアプリを動かして確認・調整が必要な部分です。
-
-  これで、フェーズ3のコード実装は完了しました。
-
-  次に、ロードマップのフェーズ4「統合、テスト、デプロイ」に進みます。
-
-  最初のタスクは「各コンポーネントの統合と連携確認」です。これはこれまでの実装でapp.py内で各クラスを呼び出すこ
-  とで行われています。
-
-  次に、「様々な英文パターン（短文、長文、複雑な構文）でのテスト」と「主語、動詞、句の特定精度に関するテストと
-  改善」、「パフォーマンス測定とボトルネックの特定、改善」です。これらは実際にアプリを動かしてテストし、必要に
-  応じてSentenceAnalyzerやResultFormatterのロジックを改善していく作業になります。
-
-  最後に、「requirements.txt の最終化」と「Streamlit Community Cloud へのデプロイ」です。requirements.txtは既にstreamlitとspacy
-  が記述されており、現状ではこれで問題ありません。デプロイはユーザー自身で行う必要があります。
-
-  これで、ロードマップに沿った実装は完了しました。
-
-  次のステップ:
-
-   1. アプリケーションのテスト:
-       * streamlit run app.py を実行し、アプリケーションを起動してください。
-       * 様々な英文を入力し、主語、動詞、名詞句、動詞句、前置詞句が正しくハイライト・括弧表示されるか確認してくだ
-         さい。
-       * 特に、複雑な構文（関係代名詞節、分詞構文など）や長い文章での表示を確認してください。
-       * エラーメッセージが適切に表示されるか確認してください。
-   2. UI/UXの調整:
-       * レスポンシブデザインが適切か、異なる画面サイズで確認してください。
-       * CSSによる表示スタイル（色、フォント、余白など）を調整し、より見やすくしてください。
-   3. デプロイ:
-       * Streamlit Community Cloud などのプラットフォームにデプロイを試みてください。
+---

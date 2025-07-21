@@ -19,7 +19,7 @@ def analyze_sentence(text):
 # --- 3. UI表示関数の定義 (今後のステップで実装) ---
 pos_colors = {
     'NOUN': 'blue', 'VERB': 'red', 'ADJ': 'green', 'ADP': 'purple', 'DET': 'orange',
-    'ADV': 'brown', 'PRON': 'pink', 'AUX': 'darkcyan', 'PART': 'darkgrey', 'CCONJ': 'lime',
+    'ADV': 'brown', 'PRON': 'pink', 'AUX': 'magenta', 'PART': 'orange', 'CCONJ': 'lime',
     'SCONJ': 'teal', 'INTJ': 'maroon', 'NUM': 'navy', 'PROPN': 'darkblue',
     'SYM': 'olive', 'X': 'black', 'SPACE': 'lightgrey', 'PUNCT': 'darkgrey'
 }

@@ -1,306 +1,218 @@
 import streamlit as st
 import spacy
-from analyzer import SentenceAnalyzer
+import graphviz
 
-# --- Streamlitページ設定 ---
-st.set_page_config(
-    page_title="英文構造解析アプリ",
-    layout="centered", # または "wide"
-    initial_sidebar_state="auto"
-)
+# --- 1. spaCyモデルのロード ---
+@st.cache_resource # アプリケーション起動時に一度だけロード
+def load_spacy_model():
+    return spacy.load("en_core_web_sm")
 
-# --- spaCyモデルのロード ---
-@st.cache_resource
-def load_model():
-    try:
-        nlp = spacy.load("en_core_web_sm")
-        return nlp
-    except OSError:
-        st.error("spaCyモデル 'en_core_web_sm' が見つかりません。")
-        st.info("コマンドラインで 'python -m spacy download en_core_web_sm' を実行してインストールしてください。")
-        st.stop()
+nlp = load_spacy_model()
 
-nlp = load_model()
-
-# --- 構文要素を保持するデータ構造 ---
-class SyntaxElement:
-    def __init__(self, text, type, role="", children=None, tokens=None, start_token_index=None, start_char=None, end_char=None, pos_tagged_text="", colored_text_for_display=""):
-        self.text = text
-        self.type = type # 例: "Sentence", "Main Clause", "Noun Phrase", "Word"
-        self.role = role # 例: "Subject", "Predicate", "Location"
-        self.children = children if children is not None else []
-        self.tokens = tokens if tokens is not None else [] # 葉ノード（単語）用
-        self.start_token_index = start_token_index if start_token_index is not None else (tokens[0].i if tokens else -1)
-        self.start_char = start_char if start_char is not None else (tokens[0].idx if tokens else -1)
-        self.end_char = end_char if end_char is not None else (tokens[-1].idx + len(tokens[-1].text) if tokens else -1)
-        self.pos_tagged_text = pos_tagged_text
-        self.colored_text_for_display = colored_text_for_display
-
-# --- 表示用の関数 ---
-def display_syntax_tree(element, indent_level=0, analyzer=None, use_colored_text_for_root=False):
-    indent = "&nbsp;" * 4 * indent_level
-
-    # 色付け処理
-    if use_colored_text_for_root and indent_level == 0:
-        display_text = element.colored_text_for_display
-    else:
-        display_text = element.text
-        if element.role == "主語":
-            display_text = f'<font color="blue">{element.text}</font>'
-        elif element.role == "述語 (主動詞)":
-            display_text = f'<font color="red">{element.text}</font>'
-
-    # ヘッダー表示
-    header = f"{indent}{element.type}"
-    if element.role:
-        header += f" ({element.role})"
-    if element.text:
-        header += f": {display_text}"
-    st.markdown(header, unsafe_allow_html=True)
-
-    # 子要素の表示
-    if element.tokens and not element.children:
-        for token in element.tokens:
-            # 句読点とスペースは表示しない
-            if token.pos_ not in ["PUNCT", "SPACE"]:
-                pos_japanese = analyzer.get_pos_japanese(token)
-                st.markdown(f"{indent}&nbsp;&nbsp;&nbsp;&nbsp;{token.text}: {pos_japanese}", unsafe_allow_html=True)
-    else:
-        for child in element.children:
-            display_syntax_tree(child, indent_level + 1, analyzer, use_colored_text_for_root=False)
-
-# --- 役割推定の補助関数 ---
-def get_noun_phrase_role(root_token):
-    if root_token.dep_ == "nsubj": return "主語"
-    if root_token.dep_ == "dobj": return "直接目的語"
-    if root_token.dep_ == "pobj": return "前置詞の目的語"
-    if root_token.dep_ == "attr": return "補語"
-    if root_token.dep_ == "oprd": return "目的語補語"
-    if root_token.dep_ == "appos": return "同格"
-    if root_token.dep_ == "npadvmod": return "副詞的修飾 (名詞句)"
-    if root_token.dep_ == "iobj": return "間接目的語"
-    return "名詞句"
-
-def get_prepositional_phrase_role(prep_token):
-    head = prep_token.head
-    if head.pos_ == "VERB":
-        if prep_token.text.lower() in ["in", "on", "at", "from", "to", "near"]: return "副詞的修飾 (場所)"
-        if prep_token.text.lower() in ["after", "before", "during", "until", "since", "while"]: return "副詞的修飾 (時)"
-        if prep_token.text.lower() in ["with", "by"]: return "副詞的修飾 (手段/方法)"
-        if prep_token.text.lower() in ["for", "about"]: return "副詞的修飾 (目的/対象)"
-        if prep_token.text.lower() in ["because of", "due to"]: return "副詞的修飾 (原因)"
-    elif head.pos_ in ["NOUN", "PROPN"]:
-        return "形容詞的修飾 (名詞)"
-    return "前置詞句"
-
-def get_verb_phrase_role(verb_token):
-    if verb_token.dep_ == "ROOT":
-        if verb_token.lemma_ in ["be", "seem", "become", "appear", "feel", "look", "sound", "taste", "smell", "grow", "remain", "stay", "turn"]: 
-            return "述語 (連結動詞)"
-        return "述語 (主動詞)"
-    if verb_token.dep_ == "xcomp": return "述語 (開補文)"
-    if verb_token.dep_ == "ccomp": return "述語 (補文)"
-    if verb_token.dep_ == "conj": return "述語 (並列)"
-    if verb_token.dep_ == "aux" or verb_token.dep_ == "auxpass": return "助動詞"
-    return "述語"
-
-def get_clause_role(clause_root_token):
-    # Find the conjunction (marker) if it exists
-    marker_token = None
-    for child in clause_root_token.children:
-        if child.dep_ == "mark":
-            marker_token = child
-            break
-    # If not found as a child, check if the clause_root_token itself is a conjunction
-    if not marker_token and clause_root_token.pos_ == "SCONJ":
-        marker_token = clause_root_token
-
-    marker_text = marker_token.text.lower() if marker_token else ""
-
-    if clause_root_token.dep_ == "advcl":
-        if marker_text in ["because", "since", "as"]: return "副詞節 (原因・理由)"
-        if marker_text in ["although", "though", "even though"]: return "副詞節 (譲歩)"
-        if marker_text in ["when", "while", "after", "before", "until", "as soon as"]: return "副詞節 (時)"
-        if marker_text in ["if", "unless", "provided that"]: return "副詞節 (条件)"
-        if marker_text in ["so that", "in order that"]: return "副詞節 (目的)"
-        if marker_text in ["where", "wherever"]: return "副詞節 (場所)"
-        if marker_text in ["as if", "as though"]: return "副詞節 (様態)"
-        return "副詞節" # Default for advcl
-    if clause_root_token.dep_ == "acl" or clause_root_token.dep_ == "relcl": return "形容詞節"
-    if clause_root_token.dep_ == "ccomp": return "名詞節 (補文)"
-    if clause_root_token.dep_ == "xcomp": return "名詞節 (開補文)"
-    return "節"
-
-# --- ヘルパー関数 ---
-def get_span_text(tokens):
-    if not tokens: return ""
-    # spaCyのSpanオブジェクトのようにテキストを結合
-    return tokens[0].doc.text[tokens[0].idx : tokens[-1].idx + len(tokens[-1].text)]
-
-def get_subtree_tokens(token):
-    return sorted([t for t in token.subtree], key=lambda t: t.i)
-
-# --- 依存ツリーを再帰的に走査し、構文要素を構築する関数 ---
-def build_syntax_tree(token, processed_indices, analyzer):
-    if token.i in processed_indices or token.pos_ in ["PUNCT", "SPACE"]:
-        processed_indices.add(token.i) # Ensure punctuation is marked processed
-        return None
-
-    element = None
-    element_tokens = [] # Tokens belonging to the current element
-
-    # 1. 従属節 (Subordinate Clauses) の検出を最優先
-    if token.dep_ in ["advcl", "acl", "ccomp", "xcomp", "relcl"] or \
-       (token.pos_ == "SCONJ" and token.dep_ == "mark") or \
-       (token.pos_ == "PRON" and token.dep_ == "nsubj" and token.head.dep_ == "relcl"): # 関係代名詞
-        
-        element_tokens = get_subtree_tokens(token)
-        element = SyntaxElement(get_span_text(element_tokens), "従属節", get_clause_role(token), tokens=element_tokens, start_token_index=token.i, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
+# --- 2. 解析関数の定義 (今後のステップで実装) ---
+def analyze_sentence(text):
+    doc = nlp(text)
     
-    # 2. 句の検出 (名詞句、前置詞句など)
-    elif token.pos_ in ["NOUN", "PROPN", "PRON"]:
-        for chunk in token.sent.noun_chunks:
-            if token == chunk.root and all(t.i not in processed_indices for t in chunk):
-                element_tokens = list(chunk)
-                element = SyntaxElement(get_span_text(element_tokens), "名詞句", get_noun_phrase_role(chunk.root), tokens=element_tokens, start_token_index=chunk.start, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
+    # トークン情報のリストを初期化
+    tokens_info = []
+    for token in doc:
+        children_ids = [child.i for child in token.children]
+        token_info = {
+            'id': token.i,
+            'text': token.text,
+            'lemma': token.lemma_,
+            'pos': token.pos_,
+            'tag': token.tag_,
+            'dep': token.dep_,
+            'head_id': token.head.i,
+            'children_ids': children_ids,
+            'is_root': token.dep_ == "ROOT"
+        }
+        tokens_info.append(token_info)
+
+    # 句構造のリストを初期化
+    chunks_info = []
+
+    # 名詞句 (NP)
+    for chunk in doc.noun_chunks:
+        chunks_info.append({
+            'type': 'NP',
+            'text': chunk.text,
+            'start_id': chunk.start,
+            'end_id': chunk.end - 1
+        })
+
+    # 動詞句 (VP), 前置詞句 (PP), 副詞句 (ADVP) はカスタムロジックで抽出
+    # (MVPでは簡易的な抽出)
+    for token in doc:
+        # 動詞句 (VP)
+        if token.dep_ == "ROOT":
+            vp_start = token.i
+            vp_end = token.i
+            for child in token.children:
+                if child.dep_ in ["aux", "auxpass", "dobj", "attr", "acomp"]:
+                    vp_end = max(vp_end, child.i)
+            chunks_info.append({
+                'type': 'VP',
+                'text': doc[vp_start:vp_end+1].text,
+                'start_id': vp_start,
+                'end_id': vp_end
+            })
+
+        # 前置詞句 (PP)
+        if token.pos_ == "ADP":
+            pp_start = token.i
+            pp_end = token.i
+            for child in token.children:
+                if child.dep_ == "pobj":
+                    pp_end = child.i
+            chunks_info.append({
+                'type': 'PP',
+                'text': doc[pp_start:pp_end+1].text,
+                'start_id': pp_start,
+                'end_id': pp_end
+            })
+
+        # 副詞句 (ADVP)
+        if token.pos_ == "ADV":
+            advp_start = token.i
+            advp_end = token.i
+            chunks_info.append({
+                'type': 'ADVP',
+                'text': doc[advp_start:advp_end+1].text,
+                'start_id': advp_start,
+                'end_id': advp_end
+            })
+
+    return {
+        'tokens': tokens_info,
+        'chunks': chunks_info
+    }
+
+# --- 3. UI表示関数の定義 (今後のステップで実装) ---
+def get_pos_color(pos_tag):
+    colors = {
+        'NOUN': 'blue', 'VERB': 'red', 'ADJ': 'green', 'ADP': 'purple', 'DET': 'orange',
+        'ADV': 'brown', 'PRON': 'pink', 'AUX': 'cyan', 'PART': 'grey', 'CCONJ': 'lime',
+        'SCONJ': 'teal', 'INTJ': 'maroon', 'NUM': 'navy', 'PROPN': 'darkblue',
+        'SYM': 'olive', 'X': 'black', 'SPACE': 'lightgrey', 'PUNCT': 'darkgrey'
+    }
+    return colors.get(pos_tag, 'black')
+
+def display_tokens_default(tokens_info):
+    html_string = ""
+    for token in tokens_info:
+        color = get_pos_color(token['pos'])
+        html_string += f"<span style='color: {color};'>{token['text']} </span>"
+    st.markdown(f"<div style='font-size: 20px;'>{html_string}</div>", unsafe_allow_html=True)
+
+def display_tokens_detailed(tokens_info):
+    st.subheader("詳細な品詞情報")
+    for token in tokens_info:
+        with st.popover(f"**{token['text']}**"):
+            st.write(f"**単語:** {token['text']}")
+            st.write(f"**原形:** {token['lemma']}")
+            st.write(f"**U-POS (汎用品詞):** {token['pos']}")
+            st.write(f"**X-POS (詳細品詞):** {token['tag']}")
+            st.write(f"**依存関係:** {token['dep']}")
+            st.write(f"**親単語ID:** {token['head_id']}")
+            st.write(f"**子単語ID:** {token['children_ids']}")
+
+def display_dependency_tree(tokens_info):
+    st.subheader("依存関係ツリー")
+    graph = graphviz.Digraph(comment='Dependency Tree', format='svg')
+    graph.attr(rankdir='LR', overlap='false', compound='true')
+
+    # ノードの追加
+    for token in tokens_info:
+        node_label = f"{token['text']} ({token['pos']})"
+        node_fillcolor = 'salmon' if token['is_root'] else 'lightblue'
+        graph.node(str(token['id']), node_label, style='filled', fillcolor=node_fillcolor, shape='box')
+
+    # エッジの追加
+    for token in tokens_info:
+        if not token['is_root']:
+            head_token = next((t for t in tokens_info if t['id'] == token['head_id']), None)
+            if head_token:
+                edge_color = 'red' if token['dep'] in ['nsubj', 'dobj'] else 'black'
+                edge_penwidth = '2' if token['dep'] in ['nsubj', 'dobj'] else '1'
+                graph.edge(str(token['head_id']), str(token['id']), label=token['dep'], color=edge_color, penwidth=edge_penwidth)
+    
+    try:
+        st.graphviz_chart(graph)
+    except Exception as e:
+        st.error(f"依存関係ツリーの表示中にエラーが発生しました: {e}")
+        st.info("Graphvizが正しくインストールされているか確認してください。")
+
+def get_chunk_color(chunk_type):
+    colors = {
+        'NP': '#DDA0DD', # Plum
+        'VP': '#ADD8E6', # LightBlue
+        'PP': '#90EE90', # LightGreen
+        'ADVP': '#FFB6C1' # LightPink
+    }
+    return colors.get(chunk_type, 'lightgrey')
+
+def display_chunks(tokens_info, chunks_info):
+    st.subheader("句構造")
+    
+    sentence_html = ""
+    token_background_colors = {}
+
+    for i, token in enumerate(tokens_info):
+        token_background_colors[token['id']] = 'transparent'
+        
+        for chunk in sorted(chunks_info, key=lambda x: (x['end_id'] - x['start_id'])):
+            if chunk['start_id'] <= token['id'] <= chunk['end_id']:
+                token_background_colors[token['id']] = get_chunk_color(chunk['type'])
                 break
-    elif token.pos_ == "ADP" and token.dep_ == "prep":
-        element_tokens = get_subtree_tokens(token)
-        element = SyntaxElement(get_span_text(element_tokens), "前置詞句", get_prepositional_phrase_role(token), tokens=element_tokens, start_token_index=token.i, start_char=element_tokens[0].idx, end_char=element_tokens[-1].idx + len(element_tokens[-1].text))
 
-    # 3. 動詞 (句) の検出
-    elif token.pos_ == "VERB" or token.pos_ == "AUX":
-        element_tokens = [token]
-        element = SyntaxElement(token.text, "動詞", get_verb_phrase_role(token), tokens=element_tokens, start_token_index=token.i, start_char=token.idx, end_char=token.idx + len(token.text))
+    for token in tokens_info:
+        bg_color = token_background_colors.get(token['id'], 'transparent')
+        sentence_html += f"<span style='background-color: {bg_color}; padding: 2px 4px; border-radius: 3px; margin: 0 1px; display: inline-block;'>{token['text']}</span> "
+    
+    st.markdown(f"<div style='font-size: 18px; line-height: 2.0; padding: 10px; border: 1px solid #ddd; border-radius: 5px;'>{sentence_html}</div>", unsafe_allow_html=True)
 
-    # 4. その他の単語
-    if element is None:
-        element_tokens = [token]
-        pos_japanese = analyzer.get_pos_japanese(token)
-        element = SyntaxElement(token.text, pos_japanese, "", tokens=element_tokens, start_token_index=token.i, start_char=token.idx, end_char=token.idx + len(token.text))
+    st.markdown("---")
+    st.markdown("#### 検出された句の一覧:")
+    for chunk in chunks_info:
+        st.markdown(f"- **{chunk['type']}**: `{chunk['text']}` (単語ID: {chunk['start_id']} - {chunk['end_id']})")
 
-    # トークンを処理済みとしてマーク
-    for t in element_tokens:
-        processed_indices.add(t.i)
+# --- 4. Streamlitアプリのメイン部分 ---
+st.set_page_config(layout="wide", page_title="英文解析ツール")
 
-    return element
+st.title("英文解析ツール")
 
-# --- メインの解析ロジック ---
-def analyze_and_format_text(doc, analyzer):
-    parsed_elements = []
+input_text = st.text_area("解析したい英文を入力してください:", "The quick brown fox jumps over the lazy dog.", height=100)
 
-    for i, sent in enumerate(doc.sents):
-        sentence_element_children = []
-        processed_indices = set()
-
-        # 色付けされた文章全体テキストを生成
-        colored_sentence_parts = []
-        for token in sent:
-            token_text = token.text
-            # 主語と述語（主動詞）に色付け
-            if get_noun_phrase_role(token) == "主語":
-                token_text = f'<font color="blue">{token.text}</font>'
-            elif get_verb_phrase_role(token) == "述語 (主動詞)":
-                token_text = f'<font color="red">{token.text}</font>'
-            colored_sentence_parts.append(token_text)
-        colored_sentence_text = " ".join(colored_sentence_parts)
-
-        # 1. Identify and process Noun Phrases first
-        for chunk in sent.noun_chunks:
-            # Ensure this chunk hasn't been processed as part of a larger structure (e.g., a clause)
-            if all(t.i not in processed_indices for t in chunk):
-                element_tokens = list(chunk)
-                role = get_noun_phrase_role(chunk.root)
-                np_element = SyntaxElement(
-                    get_span_text(element_tokens),
-                    "名詞句",
-                    role,
-                    tokens=element_tokens,
-                    start_token_index=chunk.start,
-                    start_char=element_tokens[0].idx,
-                    end_char=element_tokens[-1].idx + len(element_tokens[-1].text)
-                )
-                sentence_element_children.append(np_element)
-                for t in element_tokens:
-                    processed_indices.add(t.i)
-
-        # 2. Process remaining tokens (including verbs, prepositions, other words, and clauses)
-        # Iterate through all tokens in the sentence
-        for token in sorted(sent, key=lambda t: t.i):
-            if token.i not in processed_indices and token.pos_ not in ["PUNCT", "SPACE"]:
-                # Try to build a syntax tree element for this token
-                # This will handle verbs, prepositional phrases (if not already caught by noun chunks), and other words
-                element = build_syntax_tree(token, processed_indices, analyzer)
-                if element:
-                    sentence_element_children.append(element)
-            elif token.pos_ == "PUNCT" and token.i not in processed_indices:
-                # Handle punctuation as individual elements
-                pos_japanese = analyzer.get_pos_japanese(token)
-                punct_element = SyntaxElement(
-                    token.text,
-                    pos_japanese,
-                    "",
-                    tokens=[token],
-                    start_token_index=token.i,
-                    start_char=token.idx,
-                    end_char=token.idx + len(token.text)
-                )
-                sentence_element_children.append(punct_element)
-                processed_indices.add(token.i)
-
-
-        # Sort all identified elements by their start index
-        sentence_element_children.sort(key=lambda x: x.start_token_index)
-
-        # Create the main sentence element
-        sentence_element = SyntaxElement(
-            sent.text, # オリジナルのテキストを使用
-            "文章全体",
-            "",
-            children=sentence_element_children,
-            start_token_index=sent.start,
-            start_char=sent.start_char,
-            end_char=sent.end_char,
-            pos_tagged_text=analyzer._analyze_sentence(sent)["pos_tagged_text"],
-            colored_text_for_display=colored_sentence_text # 色付けされたテキストを新しい属性に格納
-        )
-        parsed_elements.append(sentence_element)
-
-    return parsed_elements
-
-# --- UI構築 ---
-st.title("英文構造解析アプリ")
-
-st.write("解析したい英文を下のテキストボックスに入力してください。")
-
-# --- 入力エリア ---
-user_input = st.text_area(
-    "英文を入力",
-    "",
-    height=150,
-    placeholder="例: The quick brown fox jumps over the lazy dog. Having finished his work, he went home. She wants to learn English."
-)
-
-# --- 解析実行ボタン ---
 if st.button("解析実行"):
-    if not user_input.strip():
-        st.warning("英文を入力してください。")
+    if input_text:
+        with st.spinner('解析中...'):
+            analysis_result = analyze_sentence(input_text)
+            tokens = analysis_result['tokens']
+            chunks = analysis_result['chunks']
+
+            st.markdown("---")
+            st.header("1. 品詞情報")
+
+            show_detailed_pos = st.checkbox("詳細な品詞を表示 (クリックで詳細)", value=False)
+            if show_detailed_pos:
+                display_tokens_detailed(tokens)
+            else:
+                display_tokens_default(tokens)
+            
+            st.markdown("---")
+            st.header("2. 依存関係解析")
+            display_dependency_tree(tokens)
+
+            st.markdown("---")
+            st.header("3. 句構造解析")
+            display_chunks(tokens, chunks)
+
     else:
-        try:
-            with st.spinner("解析中..."):
-                analyzer = SentenceAnalyzer(nlp)
-                doc = nlp(user_input)
-                parsed_data = analyze_and_format_text(doc, analyzer)
+        st.warning("解析する英文を入力してください。")
 
-                st.subheader("解析結果:")
-                
-                for element in parsed_data:
-                    with st.expander(f"**{element.type}:** {element.text}", expanded=True):
-                        st.markdown(f"**品詞分解:** {element.pos_tagged_text}", unsafe_allow_html=True)
-                        # display_syntax_treeの最初の呼び出しでcolored_text_for_displayを使用
-                        display_syntax_tree(element, analyzer=analyzer, use_colored_text_for_root=True)
-
-        except Exception as e:
-            st.error(
-                f"解析中にエラーが発生しました。入力された英文を確認してください。エラー詳細: {e}"
-            )
+st.sidebar.markdown("### アプリケーション情報")
+st.sidebar.info("このツールはSpaCyライブラリを使用して英文の品詞、依存関係、句構造を解析し、視覚的に表示します。")
+st.sidebar.markdown("---")
+st.sidebar.markdown("© 2025 英文解析プロジェクト")

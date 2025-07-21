@@ -22,14 +22,21 @@
 *   **Streamlitウィジェット:** `st.text_area`, `st.button`, `st.markdown`, `st.empty` (結果表示用)
 
 ### 3.2. `SentenceAnalyzer` クラス/ロジック
-*   **役割:** spaCyモデルのロード、入力テキストの解析、名詞句・動詞句の抽出、主語・動詞の特定を行う。
-*   **詳細:** spaCyの`Doc`オブジェクト、`Span`オブジェクト、依存関係解析 (`dep_`) を利用して、構文情報を取得する。**複数文の分割と各文の解析、複雑な構文パターンへの対応ロジックもここに含める。**
+*   **役割:** spaCyモデルのロード、入力テキストの解析、品詞タグ、依存関係、句構造を抽出する。
+*   **詳細:** spaCyの`Doc`オブジェクトを利用して、以下の構文情報を抽出する。
+    *   **品詞タグ (POS Tag):** 各単語の `token.pos_` (Universal POS tags) と `token.tag_` (Treebank-style POS tags) を取得する。
+    *   **依存関係 (Dependency Parsing):** 各単語の `token.dep_` (依存関係タイプ)、`token.head` (親単語)、`token.children` (子単語) を利用する。
+    *   **句構造 (Phrase Structure):**
+        *   **名詞句 (NP):** `doc.noun_chunks` を使用して抽出する。
+        *   **動詞句 (VP):** 文のROOT動詞 (`token.dep_ == "ROOT"`) を核とし、助動詞 (`aux`, `auxpass`)、目的語 (`dobj`, `iobj`)、補語 (`attr`, `acomp`, `pcomp`)、副詞 (`advmod`) などを再帰的に辿り、グループ化するカスタムロジックを実装する。
+        *   **前置詞句 (PP):** `token.pos_ == "ADP"` (前置詞) を特定し、その `pobj` (前置詞の目的語) とその子孫を再帰的に含めてグループ化するカスタムロジックを実装する。
+        *   **副詞句 (ADVP):** `token.pos_ == "ADV"` (副詞) を核とし、関連する単語をグループ化するカスタムロジックを実装する。
 
 ### 3.3. `ResultFormatter` クラス/ロジック
-*   **役割:** `SentenceAnalyzer`で得られた解析結果を、ユーザーに視覚的に分かりやすいHTML/Markdown形式に整形する。
+*   **役割:** `SentenceAnalyzer`で得られた構造化データを、ユーザーに視覚的に分かりやすいHTML/Markdown形式に整形する。
 *   **詳細:**
-    *   名詞句、動詞句に括弧を挿入する処理。
-    *   主語と動詞に特定のCSSスタイル（色）を適用するためのHTMLタグ（例: `<span>`）を挿入する処理。
+    *   句 (NP, VP, PP, ADVP) に括弧や背景色を適用する処理。
+    *   特定の品詞（例: 動詞）や依存関係（例: 主語）に特定のCSSスタイル（色）を適用するためのHTMLタグを挿入する処理。
     *   **句のネスト表示の改善**: ネストの深さに応じた括弧の種類や色、インデントなどを考慮した表示ロジック。
     *   **視覚表現の多様性**: 色付けだけでなく、太字、下線、背景色など、複数の強調スタイルを組み合わせるオプションに対応するためのロジック。
 
@@ -38,14 +45,36 @@
 *   `st.button`: 「解析実行」ボタンと「クリア」ボタン。
 *   `st.markdown`: 解析された結果（HTML形式）を表示するためのエリア。`unsafe_allow_html=True` を使用する。**インタラクティブな表示（マウスオーバー時のツールチップなど）や表示オプション（表示レベル、元の文との切り替え）に対応するための拡張を検討する。**
 
-## 4. データモデルの概要 (Streamlitのセッションステート内)
+## 4. 解析結果の内部データモデル
 
-*   `st.session_state['input_text']`: `string` (ユーザーが入力した英文の生データ)
-*   `st.session_state['parsed_html_result']`: `string` (整形され、HTMLタグが含まれた解析結果の文字列)
-*   `st.session_state['spacy_doc']`: spaCyの`Doc`オブジェクト (解析済みドキュメント。デバッグや詳細表示の際に利用可能だが、直接表示はしない)
-*   `st.session_state['is_analyzed']`: `boolean` (解析が一度実行されたかどうかのフラグ。結果表示の制御に利用)
-*   **`st.session_state['analysis_options']`**: `dict` (ユーザーが選択した解析オプションや表示スタイル設定を保持)
-*   **`st.session_state['messages']`**: `list` (ユーザーへのフィードバックメッセージを保持)
+解析結果は、UI表示や解説生成に利用しやすいように、以下の構造を持つ辞書として `st.session_state` に保持する。
+
+*   `st.session_state['analysis_result']`: `dict`
+    *   `'tokens'`: `list[TokenInfo]` - 単語情報のリスト
+    *   `'chunks'`: `list[ChunkInfo]` - 句構造情報のリスト
+
+### 4.1. TokenInfo (単語情報)
+
+| キー           | 型          | 説明                                         |
+|----------------|-------------|----------------------------------------------|
+| `id`           | `int`       | ドキュメント内での単語のインデックス (token.i) |
+| `text`         | `str`       | 単語のテキスト (token.text)                  |
+| `lemma`        | `str`       | 単語の原形 (token.lemma_)                    |
+| `pos`          | `str`       | Universal POS タグ (token.pos_)              |
+| `tag`          | `str`       | Treebank-style POS タグ (token.tag_)         |
+| `dep`          | `str`       | 依存関係タイプ (token.dep_)                  |
+| `head_id`      | `int`       | 親単語のID (token.head.i)                    |
+| `children_ids` | `list[int]` | 子単語のIDのリスト                           |
+| `is_root`      | `bool`      | この単語が文のROOTであるか                   |
+
+### 4.2. ChunkInfo (句構造情報)
+
+| キー         | 型     | 説明                               |
+|--------------|--------|------------------------------------|
+| `type`       | `str`  | 句のタイプ (NP, VP, PP, ADVP)      |
+| `text`       | `str`  | 句全体のテキスト                   |
+| `start_id`   | `int`  | 句の開始単語のID (chunk.start)     |
+| `end_id`     | `int`  | 句の終了単語のID (chunk.end - 1)   |
 
 ## 5. JavaScript連携の可能性
 

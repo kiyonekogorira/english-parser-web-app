@@ -69,9 +69,40 @@ def display_dependency_tree(tokens_info):
     graph.attr(rankdir='LR', overlap='false', compound='true')
 
     # ノードの追加
+    root_token = None
+    nsubj_token = None
+    other_tokens = []
+
     for token in tokens_info:
+        if token['is_root']:
+            root_token = token
+        elif token['dep'] == 'nsubj':
+            nsubj_token = token
+        else:
+            other_tokens.append(token)
+
+    with graph.subgraph(name='cluster_main_nodes') as c:
+        c.attr(rank='same') # ROOTとnsubjを同じランクに配置
+
+        # nsubjノードを先に配置 (左側)
+        if nsubj_token:
+            node_label = f"{nsubj_token['text']} ({nsubj_token['pos_japanese']})"
+            c.node(str(nsubj_token['id']), node_label, style='filled', fillcolor='salmon', shape='box')
+
+        # ROOTノードを次に配置 (右側)
+        if root_token:
+            node_label = f"{root_token['text']} ({root_token['pos_japanese']})"
+            c.node(str(root_token['id']), node_label, style='filled', fillcolor='salmon', shape='box')
+
+        # nsubjとROOTの間に不可視の順序付けエッジを追加
+        if nsubj_token and root_token:
+            # このエッジが左右の順序を強制する
+            graph.edge(str(nsubj_token['id']), str(root_token['id']), style='invis', constraint='true')
+
+    # その他のノードを追加
+    for token in other_tokens:
         node_label = f"{token['text']} ({token['pos_japanese']})"
-        node_fillcolor = 'salmon' if token['is_root'] else 'lightblue'
+        node_fillcolor = 'lightblue' # その他のノードはlightblue
         graph.node(str(token['id']), node_label, style='filled', fillcolor=node_fillcolor, shape='box')
 
     # エッジの追加
@@ -79,11 +110,16 @@ def display_dependency_tree(tokens_info):
         if not token['is_root']:
             head_token = next((t for t in tokens_info if t['id'] == token['head_id']), None)
             if head_token:
-                edge_color = 'red' if token['dep'] in ['nsubj', 'dobj'] else 'black'
+                edge_color = 'salmon' if token['dep'] == 'nsubj' else ('red' if token['dep'] == 'dobj' else 'black')
                 edge_penwidth = '2' if token['dep'] in ['nsubj', 'dobj'] else '1'
                 # 日本語の依存関係ラベルを使用
                 edge_label = token['dep_japanese']
-                graph.edge(str(token['head_id']), str(token['id']), label=edge_label, color=edge_color, penwidth=edge_penwidth)
+                edge_dir = 'forward' # Default direction
+                if token['dep'] == 'nsubj':
+                    edge_dir = 'both'
+                elif token['dep'] in ['det', 'amod'] and head_token and head_token['dep'] == 'nsubj': # head_tokenがnsubjの場合
+                    edge_dir = 'back'
+                graph.edge(str(token['head_id']), str(token['id']), label=edge_label, color=edge_color, penwidth=edge_penwidth, dir=edge_dir)
     
     try:
         st.graphviz_chart(graph)
@@ -174,7 +210,7 @@ if 'analysis_result' not in st.session_state:
 
 st.title("英文解析ツール")
 
-input_text = st.text_area("解析したい英文を入力してください:", "The quick brown fox jumps over the lazy dog. He is running quickly in the park. She has been studying English very hard. They will go to the store to buy some groceries.", height=100)
+input_text = st.text_area("解析したい英文を入力してください:", "The quick brown fox jumps over the lazy dog. A young boy is running quickly in the park. My diligent sister has been studying English very hard. All the students will go to the store to buy some groceries.", height=100)
 
 if st.button("解析実行"):
     if input_text:

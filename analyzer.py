@@ -58,34 +58,44 @@ class SentenceAnalyzer:
     def _get_verb_phrase_tokens(self, token):
         """動詞トークンから動詞句全体を構成するトークンを収集する"""
         vp_tokens = set()
-        
-        def collect_vp_tokens(current_token):
-            # 助動詞と本体の動詞を追加
-            if current_token not in vp_tokens:
-                vp_tokens.add(current_token)
-                # 助動詞を遡って追加
-                if current_token.dep_ in ('conj', 'xcomp', 'ccomp', 'advcl'):
-                    for child in current_token.children:
-                        if child.dep_.startswith('aux'):
-                            vp_tokens.add(child)
-            
-            # 目的語、補語、副詞、小詞などを再帰的に収集
-            for child in current_token.children:
-                if child.dep_ in ('dobj', 'iobj', 'attr', 'acomp', 'xcomp', 'ccomp', 'advmod', 'prt', 'agent', 'oprd', 'neg', 'pobj'):
-                    vp_tokens.update(child.subtree)
-                # 前置詞句全体を追加
-                elif child.dep_ == 'prep':
-                    vp_tokens.update(child.subtree)
-                # 助動詞を追加
-                elif child.dep_.startswith('aux'):
-                    vp_tokens.add(child)
-            
-            # 主動詞に接続する助動詞を追加
-            for head_child in token.head.children:
-                if head_child.dep_.startswith('aux') and head_child not in vp_tokens:
-                    vp_tokens.add(head_child)
+        queue = [token] # 主動詞/助動詞から探索を開始
 
-        collect_vp_tokens(token)
+        while queue:
+            current_token = queue.pop(0) # キューからトークンを取り出す
+            if current_token in vp_tokens:
+                continue
+            vp_tokens.add(current_token)
+
+            # 助動詞 (子と、もし現在のトークンが助動詞ならその親も) を追加
+            # 助動詞はそれ自体がVPの一部であり、さらに他のトークンを支配する可能性があるため、キューに追加
+            for child in current_token.children:
+                if child.dep_.startswith('aux'):
+                    queue.append(child)
+            
+            # 現在のトークンが助動詞で、その親が主動詞の場合、親もキューに追加
+            if current_token.dep_.startswith('aux') and current_token.head != current_token and current_token.head.pos_ in ('VERB', 'AUX'):
+                queue.append(current_token.head)
+
+            # 動詞句の構成要素となる主要な依存関係の子孫をすべて追加
+            # これらの依存関係は、句全体を形成するため、subtree を使用
+            relevant_deps_for_subtree = [
+                'dobj', 'iobj', 'attr', 'acomp', 'xcomp', 'ccomp', # 補語/引数
+                'advmod', 'prep', 'prt', 'neg', 'agent', 'oprd', 'advcl', # 修飾語
+                'csubj', 'csubjpass', 'obj', 'obl', # その他の引数/補語
+                'relcl', 'acl' # 関係節や形容詞句が動詞の補語/修飾語となる場合
+            ]
+            for child in current_token.children:
+                if child.dep_ in relevant_deps_for_subtree:
+                    vp_tokens.update(child.subtree)
+                # 助動詞は既にキューで処理済みなのでスキップ
+                elif child.dep_.startswith('aux'):
+                    pass
+                # その他の依存関係の子は、必要に応じて個別に処理を検討
+                # 現状では、subtreeでカバーされないがVPに含めるべきケースがあればここに追加
+                # 例: 'conj' (等位接続された動詞) など
+                elif child.dep_ == 'conj':
+                    queue.append(child) # 接続された動詞もVPの一部として探索
+        
         return vp_tokens
 
     def _get_adverb_phrase_tokens(self, token):
@@ -153,14 +163,30 @@ class SentenceAnalyzer:
             if phrase_tokens:
                 start_id = min(t.i for t in phrase_tokens)
                 end_id = max(t.i for t in phrase_tokens)
-                # トークンが連続していることを確認
-                if all(doc.doc[i] in phrase_tokens for i in range(start_id, end_id + 1)):
+                
+                # 句のテキストを生成する際に、句読点や空白を除外する
+                # ただし、start_idとend_idは元のトークンの範囲を維持
+                chunk_text_tokens = [
+                    doc.doc[i] for i in range(start_id, end_id + 1) 
+                    if doc.doc[i] in phrase_tokens and not doc.doc[i].is_punct and not doc.doc[i].is_space
+                ]
+                
+                # 句のテキストが空でないことを確認
+                if chunk_text_tokens:
+                    chunk_text = "".join([t.text_with_ws for t in chunk_text_tokens]).strip()
+                    
+                    # デバッグプリント
+                    print(f"DEBUG: Created chunk: Type={chunk_type}, Text='{chunk_text}', Start={start_id}, End={end_id}")
+                    print(f"DEBUG: Phrase tokens for this chunk: {[t.text for t in phrase_tokens]}")
+
                     chunks_info.append({
                         'type': chunk_type,
-                        'text': doc[start_id:end_id + 1].text,
+                        'text': chunk_text,
                         'start_id': start_id,
                         'end_id': end_id
                     })
+                else:
+                    print(f"DEBUG: Skipped empty chunk: Type={chunk_type}, Start={start_id}, End={end_id}, Phrase tokens={[t.text for t in phrase_tokens]}")
 
         # 重複を排除
         unique_chunks = { (c['type'], c['start_id'], c['end_id']): c for c in chunks_info }

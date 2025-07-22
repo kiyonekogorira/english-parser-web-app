@@ -130,7 +130,7 @@ def display_dependency_tree(tokens_info):
 def display_chunk_tree(tokens_info, chunks_info):
     st.subheader("句構造ツリー")
     graph = graphviz.Digraph(comment='Chunk Tree', format='svg')
-    graph.attr(rankdir='TB', overlap='false', compound='true')
+    graph.attr(rankdir='TB', overlap='false', compound='true') # 上から下へのレイアウト
 
     # トークンIDから情報を引けるように辞書を作成
     token_map = {token['id']: token for token in tokens_info}
@@ -152,10 +152,39 @@ def display_chunk_tree(tokens_info, chunks_info):
                     parent_id = f"{potential_parent['type']}_{potential_parent['start_id']}_{potential_parent['end_id']}"
         parent_map[chunk_id] = parent_id
 
+    # --- レイアウトのための主要な句の特定 ---
+    subject_np_id = None
+    root_vp_id = None
+    root_token_id = None
+
+    # ROOTトークンとnsubjトークンを見つける
+    for token in tokens_info:
+        if token['is_root']:
+            root_token_id = token['id']
+        if token['dep'] == 'nsubj':
+            # nsubjトークンを含むNPを探す
+            for chunk_id, chunk in chunk_dict.items():
+                if chunk['type'] == 'NP' and chunk['start_id'] <= token['id'] <= chunk['end_id']:
+                    subject_np_id = chunk_id
+                    break
+        if root_token_id and subject_np_id: # 両方見つかったらループを抜ける
+            break
+
+    # ROOTトークンを含むVPを探す
+    if root_token_id:
+        for chunk_id, chunk in chunk_dict.items():
+            if chunk['type'] == 'VP' and chunk['start_id'] <= root_token_id <= chunk['end_id']:
+                root_vp_id = chunk_id
+                break
+
+    print(f"DEBUG: subject_np_id: {subject_np_id}")
+    print(f"DEBUG: root_vp_id: {root_vp_id}")
+
     # ノードを追加
     for chunk_id, chunk in chunk_dict.items():
         color = get_chunk_color(chunk['type'])
-        graph.node(chunk_id, f"{chunk['type']}\n({chunk['text']})", style='filled', fillcolor=color, shape='box')
+        # heightとfixedsize='true'を追加
+        graph.node(chunk_id, f"{chunk['type']}\n({chunk['text']})", style='filled', fillcolor=color, shape='box', height='0.8', width='1.5', fixedsize='true')
 
     # 単語ノードを追加 (どのチャンクにも属さないもの)
     token_in_chunk = {t['id']: False for t in tokens_info}
@@ -168,15 +197,39 @@ def display_chunk_tree(tokens_info, chunks_info):
         if not is_in_chunk:
              graph.node(str(token_id), token_map[token_id]['text'], shape='plaintext')
 
+    # --- トップレベルのチャンクのグループ化と順序付け ---
+    # Sノードを追加
+    graph.node("S", "S (Sentence)", shape='ellipse', style='filled', fillcolor='lightgoldenrod', rank='min')
 
-    # エッジを追加
+    # 主要なNPとVPを同じグループに配置
+    if subject_np_id and root_vp_id:
+        # NPとVPを同じランクに配置するためのサブグラフ
+        with graph.subgraph(name='cluster_np_vp') as c:
+            c.attr(rank='same')
+            c.node(subject_np_id, group='main_np_vp')
+            c.node(root_vp_id, group='main_np_vp')
+            # NPとVPの間に不可視のエッジを追加して順序を強制
+            c.edge(subject_np_id, root_vp_id, style='invis', constraint='true')
+
+        # SからNPへのエッジ (VPはNPに続くため、NPにのみ接続)
+        graph.edge("S", subject_np_id)
+    elif subject_np_id:
+        graph.edge("S", subject_np_id)
+    elif root_vp_id:
+        graph.edge("S", root_vp_id)
+
+    # その他のトップレベルチャンク
+    for chunk_id, parent_id in parent_map.items():
+        if parent_id is None and chunk_id != subject_np_id and chunk_id != root_vp_id:
+            graph.edge("S", chunk_id)
+
+    # エッジを追加 (既存のロジック)
     for chunk_id, parent_id in parent_map.items():
         if parent_id:
             graph.edge(parent_id, chunk_id)
-        else: # 親がいない場合は文のルートに接続 (見えないノード)
-            graph.edge("S", chunk_id)
+        # Sノードへの接続は上記で処理済みなので、ここではスキップ
     
-    # チャンクと単語のエッジを追加
+    # チャンクと単語のエッジを追加 (既存のロジック)
     for chunk_id, chunk in chunk_dict.items():
         current_tokens_ids = list(range(chunk['start_id'], chunk['end_id'] + 1))
         children_chunks = [cid for cid, pid in parent_map.items() if pid == chunk_id]
@@ -188,9 +241,8 @@ def display_chunk_tree(tokens_info, chunks_info):
                     current_tokens_ids.remove(i)
         
         for token_id in current_tokens_ids:
-            # token_map を使って安全にアクセス
-            token_data = token_map.get(token_id) # ここを修正
-            if token_data: # token_data が存在する場合のみ処理
+            token_data = token_map.get(token_id)
+            if token_data:
                 graph.node(str(token_id), token_data['text'], shape='plaintext')
                 graph.edge(chunk_id, str(token_id))
 

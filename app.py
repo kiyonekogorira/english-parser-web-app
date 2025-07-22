@@ -127,31 +127,102 @@ def display_dependency_tree(tokens_info):
         st.error(f"依存関係ツリーの表示中にエラーが発生しました: {e}")
         st.info("Graphvizが正しくインストールされているか確認してください。")
 
-def display_chunks(tokens_info, chunks_info):
-    st.subheader("句構造")
-    
-    sentence_html = ""
-    token_background_colors = {}
+def display_chunk_tree(tokens_info, chunks_info):
+    st.subheader("句構造ツリー")
+    graph = graphviz.Digraph(comment='Chunk Tree', format='svg')
+    graph.attr(rankdir='TB', overlap='false', compound='true')
 
-    for i, token in enumerate(tokens_info):
-        token_background_colors[token['id']] = 'transparent'
+    # トークンIDから情報を引けるように辞書を作成
+    token_map = {token['id']: token for token in tokens_info}
+
+    # チャンクをIDでアクセスできるように辞書化
+    chunk_dict = {f"{c['type']}_{c['start_id']}_{c['end_id']}": c for c in chunks_info}
+
+    # 親子関係を構築
+    parent_map = {}
+    sorted_chunks = sorted(chunks_info, key=lambda x: (x['start_id'], - (x['end_id'] - x['start_id'])))
+
+    for i, chunk in enumerate(sorted_chunks):
+        chunk_id = f"{chunk['type']}_{chunk['start_id']}_{chunk['end_id']}"
+        parent_id = None
+        for j, potential_parent in enumerate(sorted_chunks):
+            if i == j: continue
+            if potential_parent['start_id'] <= chunk['start_id'] and potential_parent['end_id'] >= chunk['end_id']:
+                if parent_id is None or (chunk_dict[parent_id]['end_id'] - chunk_dict[parent_id]['start_id'] > potential_parent['end_id'] - potential_parent['start_id']):
+                    parent_id = f"{potential_parent['type']}_{potential_parent['start_id']}_{potential_parent['end_id']}"
+        parent_map[chunk_id] = parent_id
+
+    # ノードを追加
+    for chunk_id, chunk in chunk_dict.items():
+        color = get_chunk_color(chunk['type'])
+        graph.node(chunk_id, f"{chunk['type']}\n({chunk['text']})", style='filled', fillcolor=color, shape='box')
+
+    # 単語ノードを追加 (どのチャンクにも属さないもの)
+    token_in_chunk = {t['id']: False for t in tokens_info}
+    for chunk in chunks_info:
+        for i in range(chunk['start_id'], chunk['end_id'] + 1):
+            if i in token_in_chunk:
+                token_in_chunk[i] = True
+    
+    for token_id, is_in_chunk in token_in_chunk.items():
+        if not is_in_chunk:
+             graph.node(str(token_id), token_map[token_id]['text'], shape='plaintext')
+
+
+    # エッジを追加
+    for chunk_id, parent_id in parent_map.items():
+        if parent_id:
+            graph.edge(parent_id, chunk_id)
+        else: # 親がいない場合は文のルートに接続 (見えないノード)
+            graph.edge("S", chunk_id)
+    
+    # チャンクと単語のエッジを追加
+    for chunk_id, chunk in chunk_dict.items():
+        current_tokens_ids = list(range(chunk['start_id'], chunk['end_id'] + 1))
+        children_chunks = [cid for cid, pid in parent_map.items() if pid == chunk_id]
         
-        for chunk in sorted(chunks_info, key=lambda x: (x['end_id'] - x['start_id'])):
-            if chunk['start_id'] <= token['id'] <= chunk['end_id']:
-                token_background_colors[token['id']] = get_chunk_color(chunk['type'])
-                break
+        for child_chunk_id in children_chunks:
+            child_chunk = chunk_dict[child_chunk_id]
+            for i in range(child_chunk['start_id'], child_chunk['end_id'] + 1):
+                if i in current_tokens_ids:
+                    current_tokens_ids.remove(i)
+        
+        for token_id in current_tokens_ids:
+            # token_map を使って安全にアクセス
+            token_data = token_map.get(token_id) # ここを修正
+            if token_data: # token_data が存在する場合のみ処理
+                graph.node(str(token_id), token_data['text'], shape='plaintext')
+                graph.edge(chunk_id, str(token_id))
 
-    for token in tokens_info:
-        bg_color = token_background_colors.get(token['id'], 'transparent')
-        sentence_html += f"<span style='background-color: {bg_color}; padding: 2px 4px; border-radius: 3px; margin: 0 1px; display: inline-block;'>{token['text']}</span> "
-    
-    st.markdown(f"<div style='font-size: 18px; line-height: 2.0; padding: 10px; border: 1px solid #ddd; border-radius: 5px;'>{sentence_html}</div>", unsafe_allow_html=True)
+    try:
+        st.graphviz_chart(graph)
+    except Exception as e:
+        st.error(f"句構造ツリーの表示中にエラーが発生しました: {e}")
+
+def display_chunks(tokens_info, chunks_info):
+    st.subheader("句構造の階層表示")
+    display_chunk_tree(tokens_info, chunks_info)
 
     st.markdown("---")
-    st.markdown("#### 検出された句の一覧:")
-    for chunk in chunks_info:
+    st.markdown("#### 検出された句の一覧 (ネスト構造):")
+    
+    # 句のネストレベルを計算して表示
+    nested_chunks = []
+    for i, chunk in enumerate(chunks_info):
+        nesting_level = 0
+        for other_chunk in chunks_info:
+            if chunk != other_chunk and \
+               other_chunk['start_id'] <= chunk['start_id'] and \
+               chunk['end_id'] <= other_chunk['end_id']:
+                nesting_level += 1
+        nested_chunks.append((chunk, nesting_level))
+    
+    nested_chunks.sort(key=lambda x: (x[0]['start_id'], x[1]))
+
+    for chunk, nesting_level in nested_chunks:
+        indent = "&nbsp;" * 4 * nesting_level
         japanese_type = chunk_type_japanese_map.get(chunk['type'], chunk['type'])
-        st.markdown(f"- **{japanese_type}**: `{chunk['text']}` (単語ID: {chunk['start_id']} - {chunk['end_id']})")
+        st.markdown(f"{indent}- **{japanese_type}**: `{chunk['text']}`")
 
 # 期待される句構造データ (デバッグ用)
 expected_chunks_data = [

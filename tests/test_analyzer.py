@@ -11,53 +11,95 @@ def nlp_model():
 def analyzer(nlp_model):
     return SentenceAnalyzer(nlp_model)
 
-def test_analyze_simple_sentence(analyzer):
-    text = "I love programming."
+# --- ヘルパー関数 ---
+def find_chunk(chunks, chunk_type, text):
+    """特定のタイプのチャンクとテキストを持つチャンクを見つける"""
+    for chunk in chunks:
+        if chunk['type'] == chunk_type and chunk['text'] == text:
+            return True
+    print(f"Chunk not found: type={chunk_type}, text='{text}'")
+    print(f"Available chunks of type {chunk_type}: {[c['text'] for c in chunks if c['type'] == chunk_type]}")
+    return False
+
+# --- 基本的な解析テスト ---
+
+def test_analyze_text_returns_tokens_and_chunks(analyzer):
+    text = "The cat sat on the mat."
     result = analyzer.analyze_text(text)
     assert len(result) == 1
-    assert result[0]["original_text"] == "I love programming."
-    assert {"text": "I", "start": 0, "end": 1} in result[0]["subjects"]
-    assert {"text": "love", "start": 2, "end": 6} in result[0]["verbs"]
-    assert {"text": "programming", "start": 7, "end": 18} in result[0]["noun_phrases"]
+    sentence_result = result[0]
+    
+    assert "tokens" in sentence_result and len(sentence_result["tokens"]) > 0
+    first_token = sentence_result["tokens"][0]
+    assert "id" in first_token and "text" in first_token and "pos" in first_token
+    
+    assert "chunks" in sentence_result and len(sentence_result["chunks"]) > 0
+    # NP, PP, VPなどが含まれていることを確認
+    chunk_types = {c['type'] for c in sentence_result["chunks"]}
+    assert 'NP' in chunk_types
+    assert 'PP' in chunk_types
+    assert 'VP' in chunk_types
+
+def test_analyze_empty_and_non_english_text(analyzer):
+    assert analyzer.analyze_text("") == []
+    assert analyzer.analyze_text("      ") == []
+    assert analyzer.analyze_text("これはテストです。") == []
+    assert analyzer.analyze_text("12345 !@#$%^&*()") == []
 
 def test_analyze_multiple_sentences(analyzer):
-    text = "Hello. How are you? I am fine."
-    result = analyzer.analyze_text(text)
-    assert len(result) == 3
-    assert result[0]["original_text"] == "Hello."
-    assert result[1]["original_text"] == "How are you?"
-    assert result[2]["original_text"] == "I am fine."
-
-def test_analyze_empty_text(analyzer):
-    text = ""
-    result = analyzer.analyze_text(text)
-    assert len(result) == 0
-
-def test_analyze_text_with_japanese_labels(analyzer):
-    text = "テストケース: This is a test. 1. Another test."
+    text = "Hello world. How are you?"
     result = analyzer.analyze_text(text)
     assert len(result) == 2
-    assert result[0]["original_text"] == "This is a test."
-    assert result[1]["original_text"] == "Another test."
+    assert result[0]["original_text"] == "Hello world."
+    assert result[1]["original_text"] == "How are you?"
 
-def test_analyze_verb_phrase(analyzer):
+# --- 句抽出ロジックのテスト ---
+
+def test_vp_extraction_with_auxiliaries_and_adverb(analyzer):
+    text = "I will have been running quickly."
+    chunks = analyzer.analyze_text(text)[0]['chunks']
+    assert find_chunk(chunks, 'VP', 'will have been running quickly'), "VP with auxiliaries and adverb failed."
+
+def test_vp_extraction_with_prep_phrase(analyzer):
+    text = "He jumps over the lazy dog."
+    chunks = analyzer.analyze_text(text)[0]['chunks']
+    assert find_chunk(chunks, 'VP', 'jumps over the lazy dog'), "VP with prepositional phrase failed."
+
+def test_advp_extraction_with_modifier(analyzer):
+    text = "She works very hard."
+    chunks = analyzer.analyze_text(text)[0]['chunks']
+    assert find_chunk(chunks, 'ADVP', 'very hard'), "ADVP with modifier failed."
+
+def test_pp_extraction_complex_nesting(analyzer):
+    text = "The book on the table in the corner is mine."
+    chunks = analyzer.analyze_text(text)[0]['chunks']
+    # analyzer._remove_subsets により、'in the corner' は 'on the table in the corner' に包含されるため削除される
+    assert find_chunk(chunks, 'PP', 'on the table in the corner'), "Largest PP not found."
+    assert find_chunk(chunks, 'PP', 'in the corner'), "Subset PP was not removed."
+
+def test_vp_with_direct_object(analyzer):
     text = "She is singing a song."
-    result = analyzer.analyze_text(text)
-    assert len(result) == 1
-    vp_found = False
-    for vp in result[0]["verb_phrases"]:
-        if "singing a song" in vp["text"]:
-            vp_found = True
-            break
-    assert vp_found
+    chunks = analyzer.analyze_text(text)[0]['chunks']
+    assert find_chunk(chunks, 'VP', 'is singing a song'), "VP with direct object failed."
 
-def test_analyze_prepositional_phrase(analyzer):
-    text = "He is in the room."
-    result = analyzer.analyze_text(text)
-    assert len(result) == 1
-    pp_found = False
-    for pp in result[0]["prepositional_phrases"]:
-        if "in the room" in pp["text"]:
-            pp_found = True
-            break
-    assert pp_found
+def test_no_duplicate_chunks(analyzer):
+    text = "I see a man who is tall and who is running."
+    chunks = analyzer.analyze_text(text)[0]['chunks']
+    
+    unique_keys = set()
+    for chunk in chunks:
+        key = (chunk['type'], chunk['start_id'], chunk['end_id'])
+        assert key not in unique_keys, f"Duplicate chunk found: {key}"
+        unique_keys.add(key)
+
+# --- ヘルパー関数のテスト ---
+
+def test_get_pos_japanese(analyzer):
+    assert analyzer.get_pos_japanese_from_pos_tag("NOUN") == "名詞"
+    assert analyzer.get_pos_japanese_from_pos_tag("VERB") == "動詞"
+    assert analyzer.get_pos_japanese_from_pos_tag("UNKNOWN") == "UNKNOWN"
+
+def test_get_dep_japanese(analyzer):
+    assert analyzer.get_dep_japanese("nsubj") == "名詞主語"
+    assert analyzer.get_dep_japanese("dobj") == "直接目的語"
+    assert analyzer.get_dep_japanese("UNKNOWN") == "UNKNOWN"

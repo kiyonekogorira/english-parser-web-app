@@ -1,6 +1,7 @@
 import streamlit as st
 import spacy
 import graphviz
+import streamlit.components.v1 as components
 from analyzer import SentenceAnalyzer # analyzer.pyからSentenceAnalyzerをインポート
 
 # --- 1. spaCyモデルのロード ---
@@ -34,9 +35,6 @@ chunk_colors = {
     'ADVP': '#FFB6C1' # LightPink
 }
 
-def get_chunk_color(chunk_type):
-    return chunk_colors.get(chunk_type, 'lightgrey')
-
 chunk_type_japanese_map = {
     'NP': '名詞句 (Noun Phrase)',
     'VP': '動詞句 (Verb Phrase)',
@@ -59,9 +57,69 @@ def display_tokens_detailed(tokens_info):
             st.write(f"**原形:** {token['lemma']}")
             st.write(f"**U-POS (汎用品詞):** {token['pos']} ({token['pos_japanese']})")
             st.write(f"**X-POS (詳細品詞):** {token['tag']}")
-            st.write(f"**依存関係:** {token['dep']}")
+            st.write(f"**依存関係:** {token['dep']} ({token['dep_japanese']})")
             st.write(f"**親単語ID:** {token['head_id']}")
             st.write(f"**子単語ID:** {token['children_ids']}")
+            if token.get('morph_japanese'):
+                st.write(f"**形態素情報:** {token['morph_japanese']}")
+            if token.get('is_entity_part'):
+                st.write(f"**固有表現タイプ:** {token['ent_type']} ({token['ent_type_japanese']})")
+                if token.get('entity_text'):
+                    st.write(f"**固有表現全体:** {token['entity_text']}")
+
+def display_mermaid_dependency_tree(tokens_info):
+    st.subheader("依存関係ツリー (Mermaid版)")
+    mermaid_code = "graph LR\n" # Left-Right direction for dependency tree
+
+    # ノードの追加
+    root_token = None
+    nsubj_token = None
+    other_tokens = []
+
+    for token in tokens_info:
+        if token['is_root']:
+            root_token = token
+        elif token['dep'] == 'nsubj':
+            nsubj_token = token
+        else:
+            other_tokens.append(token)
+
+    # ROOTとnsubjを強調
+    if nsubj_token:
+        mermaid_code += f"    {nsubj_token['id']}[\"{nsubj_token['text']}<br>({nsubj_token['pos_japanese']})\"]:::main_node\n"
+    if root_token:
+        mermaid_code += f"    {root_token['id']}[\"{root_token['text']}<br>({root_token['pos_japanese']})\"]:::main_node\n"
+
+    # その他のノード
+    for token in other_tokens:
+        mermaid_code += f"    {token['id']}[\"{token['text']}<br>({token['pos_japanese']})\"]:::other_node\n"
+
+    # nsubjとROOTの順序を強制
+    if nsubj_token and root_token:
+        mermaid_code += f"    {nsubj_token['id']} --- {root_token['id']}\n"
+
+    # エッジの追加
+    for token in tokens_info:
+        if not token['is_root']:
+            head_token = next((t for t in tokens_info if t['id'] == token['head_id']), None)
+            if head_token:
+                edge_label = token['dep_japanese']
+                mermaid_code += f"    {head_token['id']} -- {edge_label} --> {token['id']}\n"
+
+    # スタイル定義
+    mermaid_code += "    classDef main_node fill:#salmon,stroke:#333,stroke-width:2px;\n"
+    mermaid_code += "    classDef other_node fill:#lightblue,stroke:#333,stroke-width:1px;\n"
+
+    html_content = f'''
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <div class="mermaid">
+        {mermaid_code}
+    </div>
+    <script>
+        mermaid.initialize({{ startOnLoad: true }});
+    </script>
+    '''
+    components.html(html_content, height=600) # Adjust height as needed
 
 def display_dependency_tree(tokens_info):
     st.subheader("依存関係ツリー")
@@ -127,6 +185,9 @@ def display_dependency_tree(tokens_info):
         st.error(f"依存関係ツリーの表示中にエラーが発生しました: {e}")
         st.info("Graphvizが正しくインストールされているか確認してください。")
 
+def get_chunk_color(chunk_type):
+    return chunk_colors.get(chunk_type, '#808080') # Default to grey if not found
+
 def display_chunk_tree(tokens_info, chunks_info):
     st.subheader("句構造ツリー")
     graph = graphviz.Digraph(comment='Chunk Tree', format='svg')
@@ -151,6 +212,20 @@ def display_chunk_tree(tokens_info, chunks_info):
                 if parent_id is None or (chunk_dict[parent_id]['end_id'] - chunk_dict[parent_id]['start_id'] > potential_parent['end_id'] - potential_parent['start_id']):
                     parent_id = f"{potential_parent['type']}_{potential_parent['start_id']}_{potential_parent['end_id']}"
         parent_map[chunk_id] = parent_id
+
+    # --- デバッグ情報: 中間データ構造 ---
+    with st.expander("句構造ツリー生成用中間データ (Graphviz版)"):
+        st.markdown("#### `token_map` (トークンIDからトークン情報へのマッピング)")
+        st.markdown("**使用目的**: 単語のIDをキーとして、その単語の全情報（テキスト、品詞、依存関係など）に素早くアクセスするために使用されます。")
+        st.json(token_map)
+
+        st.markdown("#### `chunk_dict` (チャンクIDからチャンク情報へのマッピング)")
+        st.markdown("**使用目的**: チャンクを一意に識別するID（例: `NP_0_2`）をキーとして、そのチャンクの全情報（種類、テキスト、開始/終了IDなど）に素早くアクセスするために使用されます。")
+        st.json(chunk_dict)
+
+        st.markdown("#### `parent_map` (チャンクの親子関係)")
+        st.markdown("**使用目的**: 各チャンクがどのチャンクに包含されているか（ネスト構造）を定義します。`{子チャンクID: 親チャンクID}`の形式で、ツリーの階層構造を構築するために使用されます。`parent_id`が`None`のチャンクはトップレベルのチャンクです。")
+        st.json(parent_map)
 
     # --- レイアウトのための主要な句の特定 ---
     subject_np_id = None
@@ -251,6 +326,123 @@ def display_chunk_tree(tokens_info, chunks_info):
     except Exception as e:
         st.error(f"句構造ツリーの表示中にエラーが発生しました: {e}")
 
+def display_mermaid_chunk_tree(tokens_info, chunks_info):
+    st.subheader("句構造ツリー (Mermaid版)")
+    mermaid_code = "graph TD\n" # Top-Down direction for overall tree
+
+    token_map = {token['id']: token for token in tokens_info}
+    chunk_dict = {f"{c['type']}_{c['start_id']}_{c['end_id']}": c for c in chunks_info}
+
+    parent_map = {}
+    sorted_chunks = sorted(chunks_info, key=lambda x: (x['start_id'], - (x['end_id'] - x['start_id'])))
+
+    for i, chunk in enumerate(sorted_chunks):
+        chunk_id = f"{chunk['type']}_{chunk['start_id']}_{chunk['end_id']}"
+        parent_id = None
+        for j, potential_parent in enumerate(sorted_chunks):
+            if i == j: continue
+            if potential_parent['start_id'] <= chunk['start_id'] and potential_parent['end_id'] >= chunk['end_id']:
+                if parent_id is None or (chunk_dict[parent_id]['end_id'] - chunk_dict[parent_id]['start_id'] > potential_parent['end_id'] - potential_parent['start_id']):
+                    parent_id = f"{potential_parent['type']}_{potential_parent['start_id']}_{potential_parent['end_id']}"
+        parent_map[chunk_id] = parent_id
+
+    # --- デバッグ情報: 中間データ構造 (Mermaid版) ---
+    with st.expander("句構造ツリー生成用中間データ (Mermaid版)"):
+        st.markdown("#### `token_map` (トークンIDからトークン情報へのマッピング)")
+        st.markdown("**使用目的**: 単語のIDをキーとして、その単語の全情報（テキスト、品詞、依存関係など）に素早くアクセスするために使用されます。")
+        st.json(token_map)
+
+        st.markdown("#### `chunk_dict` (チャンクIDからチャンク情報へのマッピング)")
+        st.markdown("**使用目的**: チャンクを一意に識別するID（例: `NP_0_2`）をキーとして、そのチャンクの全情報（種類、テキスト、開始/終了IDなど）に素早くアクセスするために使用されます。")
+        st.json(chunk_dict)
+
+        st.markdown("#### `parent_map` (チャンクの親子関係)")
+        st.markdown("**使用目的**: 各チャンクがどのチャンクに包含されているか（ネスト構造）を定義します。`{子チャンクID: 親チャンクID}`の形式で、ツリーの階層構造を構築するために使用されます。`parent_id`が`None`のチャンクはトップレベルのチャンクです。")
+        st.json(parent_map)
+
+    # --- レイアウトのための主要な句の特定 (Graphviz版から流用) ---
+    subject_np_id = None
+    root_vp_id = None
+    root_token_id = None
+
+    for token in tokens_info:
+        if token['is_root']:
+            root_token_id = token['id']
+        if token['dep'] == 'nsubj':
+            for chunk_id, chunk in chunk_dict.items():
+                if chunk['type'] == 'NP' and chunk['start_id'] <= token['id'] <= chunk['end_id']:
+                    subject_np_id = chunk_id
+                    break
+        if root_token_id and subject_np_id:
+            break
+
+    if root_token_id:
+        for chunk_id, chunk in chunk_dict.items():
+            if chunk['type'] == 'VP' and chunk['start_id'] <= root_token_id <= chunk['end_id']:
+                root_vp_id = chunk_id
+                break
+
+    # Sノードの定義
+    mermaid_code += "    S((Sentence))\n"
+
+    # NPとVPの水平配置を試みるサブグラフ
+    if subject_np_id and root_vp_id:
+        mermaid_code += "    subgraph MainPhrases\n"
+        mermaid_code += "        direction LR\n" # Left-Right direction for this subgraph
+        mermaid_code += f"        {subject_np_id}[\"{chunk_dict[subject_np_id]['type']}<br>{chunk_dict[subject_np_id]['text']}\"]\n"
+        mermaid_code += f"        {root_vp_id}[\"{chunk_dict[root_vp_id]['type']}<br>{chunk_dict[root_vp_id]['text']}\"]\n"
+        mermaid_code += f"        {subject_np_id} --- {root_vp_id}\n" # NPからVPへの不可視エッジで順序を強制
+        mermaid_code += "    end\n"
+        mermaid_code += f"    S --> MainPhrases\n"
+    elif subject_np_id:
+        mermaid_code += f"    {subject_np_id}[\"{chunk_dict[subject_np_id]['type']}<br>{chunk_dict[subject_np_id]['text']}\"]\n"
+        mermaid_code += f"    S --> {subject_np_id}\n"
+    elif root_vp_id:
+        mermaid_code += f"    {root_vp_id}[\"{chunk_dict[root_vp_id]['type']}<br>{chunk_dict[root_vp_id]['text']}\"]\n"
+        mermaid_code += f"    S --> {root_vp_id}\n"
+
+    # その他のチャンクノードとエッジ
+    for chunk_id, chunk in chunk_dict.items():
+        if chunk_id != subject_np_id and chunk_id != root_vp_id:
+            mermaid_code += f"    {chunk_id}[\"{chunk['type']}<br>{chunk['text']}\"]\n"
+            if parent_map[chunk_id] is None: # Top-level chunk not NP/VP
+                mermaid_code += f"    S --> {chunk_id}\n"
+
+    # 親子関係のエッジ
+    for chunk_id, parent_id in parent_map.items():
+        if parent_id and (chunk_id != subject_np_id and chunk_id != root_vp_id): # Avoid re-adding S->NP/VP edges
+            mermaid_code += f"    {parent_id} --> {chunk_id}\n"
+
+    # チャンクと単語のエッジ
+    for chunk_id, chunk in chunk_dict.items():
+        current_tokens_ids = list(range(chunk['start_id'], chunk['end_id'] + 1))
+        children_chunks = [cid for cid, pid in parent_map.items() if pid == chunk_id]
+
+        for child_chunk_id in children_chunks:
+            child_chunk = chunk_dict[child_chunk_id]
+            for i in range(child_chunk['start_id'], child_chunk['end_id'] + 1):
+                if i in current_tokens_ids:
+                    current_tokens_ids.remove(i)
+
+        for token_id in current_tokens_ids:
+            token_data = token_map.get(token_id)
+            if token_data:
+                # MermaidノードIDは数字から始まることができないため、プレフィックスを追加
+                token_node_id = f"token_{token_id}"
+                mermaid_code += f"    {token_node_id}[{token_data['text']}]\n"
+                mermaid_code += f"    {chunk_id} --> {token_node_id}\n"
+
+    html_content = f'''
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <div class="mermaid">
+        {mermaid_code}
+    </div>
+    <script>
+        mermaid.initialize({{ startOnLoad: true }});
+    </script>
+    '''
+    components.html(html_content, height=800) # Adjust height as needed
+
 def display_chunks(tokens_info, chunks_info):
     st.subheader("句構造の階層表示")
     display_chunk_tree(tokens_info, chunks_info)
@@ -318,11 +510,13 @@ def display_color_legend():
     st.sidebar.markdown("### 色分け凡例")
     st.sidebar.markdown("#### 品詞 (POS)")
     for pos, color in pos_colors.items():
-        st.sidebar.markdown(f"<span style='color: {color};'>■</span> {pos} ({analyzer.pos_map.get(pos, pos)})", unsafe_allow_html=True)
+        st.sidebar.markdown(f"<span style='color: {color};'>■</span> {analyzer.pos_map.get(pos, pos)} ({pos})", unsafe_allow_html=True)
     
     st.sidebar.markdown("#### 句構造 (Chunk)")
     for chunk_type, color in chunk_colors.items():
-        st.sidebar.markdown(f"<span style='background-color: {color}; padding: 2px 5px; border-radius: 3px;'>&nbsp;&nbsp;&nbsp;</span> {chunk_type_japanese_map.get(chunk_type, chunk_type)}", unsafe_allow_html=True)
+        japanese_name = chunk_type_japanese_map.get(chunk_type, chunk_type).split('(')[0].strip()
+        st.sidebar.markdown(f"<span style='background-color: {color}; padding: 2px 5px; border-radius: 3px;'>&nbsp;&nbsp;&nbsp;</span> {japanese_name} ({chunk_type})", unsafe_allow_html=True)
+
 
 # --- 4. Streamlitアプリのメイン部分 ---
 st.set_page_config(layout="wide", page_title="英文解析ツール")
@@ -333,7 +527,7 @@ if 'analysis_result' not in st.session_state:
 
 st.title("英文解析ツール")
 
-input_text = st.text_area("解析したい英文を入力してください:", "The quick brown fox jumps over the lazy dog. A young boy is running quickly in the park. My diligent sister has been studying English very hard. All the students will go to the store to buy some groceries.", height=100)
+input_text = st.text_area("解析したい英文を入力してください:", "The quick brown fox jumps over the lazy dog. A young boy is running quickly in the park. My diligent sister has been studying English very hard. All the students will go to the store to buy some groceries. Dr. Smith visited Tokyo on July 23rd, 2025 to attend a conference organized by Google.", height=100)
 
 if st.button("解析実行"):
     if input_text:
@@ -351,6 +545,70 @@ if st.session_state.analysis_result:
         tokens = sentence_analysis['tokens']
         chunks = sentence_analysis['chunks']
 
+        with st.expander(f"文 {i+1} のデバッグ情報 (tokens_info & chunks_info)"):
+            st.markdown("#### トークン情報 (tokens_info)")
+            st.markdown('''
+**利用目的**: このデータは、文を構成する個々の単語（トークン）に関する詳細な言語的特徴を保持します。構文解析のすべてのステップで基礎情報として利用されます。
+- **text**: トークンの元々のテキスト。
+- **lemma**: トークンの見出し語（基本形）。
+- **pos**: Universal POSタグ（言語に依存しない品詞）。
+- **pos_japanese**: 日本語に翻訳されたPOSタグ。
+- **tag**: 詳細なPOSタグ（言語固有）。
+- **dep**: 依存関係ラベル。
+- **dep_japanese**: 日本語に翻訳された依存関係ラベル。
+- **head_id**: 依存関係の親となるトークンのID。
+- **children_ids**: 依存関係の子となるトークンのIDのリスト。
+- **id**: 文中でのトークンの一意なID。
+- **start**: 文全体におけるトークンの開始位置。
+- **end**: 文全体におけるトークンの終了位置。
+- **is_root**: トークンが依存関係の根（ROOT）であるかどうかの真偽値。
+''')
+            st.markdown("品詞（POS）、依存関係（どの単語がどの単語を修飾しているか）、見出し語（単語の基本形）などが含まれており、構文解析のすべてのステップで基礎情報として利用されます。")
+            processed_tokens_info = []
+            for token in tokens:
+                processed_tokens_info.append({
+                    "単語 (text)": token['text'],
+                    "見出し語 (lemma)": token['lemma'],
+                    "ID (id)": token['id'],
+                    "品詞 (pos)": f"{token['pos_japanese']} ({token['pos']})",
+                    "詳細品詞 (tag)": token['tag'],
+                    "依存関係 (dep)": f"{token['dep_japanese']} ({token['dep']})",
+                    "親単語ID (head_id)": token['head_id'],
+                    "子単語ID (children_ids)": token['children_ids'],
+                    "文のROOT (is_root)": token['is_root'],
+                    "開始位置 (start)": token['start'],
+                    "終了位置 (end)": token['end'],
+                    "形態素 (morph)": token['morph'],
+                    "形態素_日本語訳 (morph_japanese)": token['morph_japanese'],
+                    "固有表現タイプ (ent_type)": f"{token['ent_type_japanese']} ({token['ent_type']})",
+                    "固有表現タイプ_日本語訳 (ent_type_japanese)": token['ent_type_japanese'],
+                    "固有表現の一部 (is_entity_part)": token['is_entity_part'],
+                    "固有表現テキスト (entity_text)": token['entity_text'],
+                    "固有表現タイプ (entity_type)": token['entity_type']
+                })
+            st.json(processed_tokens_info)
+
+            st.markdown("#### チャンク情報 (chunks_info)")
+            st.markdown('''
+**利用目的**: このデータは、文法的な単位である「句（チャンク）」を定義します。この情報は、句構造ツリーを構築するための直接的なインプットとなります。
+- **type**: チャンクの種類（例: NP, VP, PP）。
+- **text**: チャンクに含まれるテキスト全体。
+- **start_id**: チャンクを構成する最初のトークンのID。
+- **end_id**: チャンクを構成する最後のトークンのID。
+- **start**: 文全体におけるチャンクの開始文字位置。
+- **end**: 文全体におけるチャンクの終了文字位置。
+''')
+            st.markdown("例えば、「The quick brown fox」のような名詞句（NP）や「jumps over the lazy dog」のような動詞句（VP）を特定します。この情報は、句構造ツリーを構築するための直接的なインプットとなります。")
+            processed_chunks_info = []
+            for chunk in chunks:
+                processed_chunks_info.append({
+                    "句の種類": f"{chunk_type_japanese_map.get(chunk['type'], '不明')} ({chunk['type']})",
+                    "テキスト": chunk['text'],
+                    "開始ID": chunk['start_id'],
+                    "終了ID": chunk['end_id']
+                })
+            st.json(processed_chunks_info)
+
         st.markdown("---")
         st.header("1. 品詞情報")
 
@@ -363,34 +621,34 @@ if st.session_state.analysis_result:
         st.markdown("---")
         st.header("2. 依存関係解析")
         display_dependency_tree(tokens)
+        display_mermaid_dependency_tree(tokens)
 
         st.markdown("---")
         st.header("3. 句構造解析")
         display_chunks(tokens, chunks)
+        display_mermaid_chunk_tree(tokens, chunks)
 
         # 期待される句構造のデバッグ表示 (該当する文のみ表示)
         if i < len(expected_chunks_data):
             display_expected_chunks([expected_chunks_data[i]])
         st.markdown("---<br>---") # 各文の区切りを明確にする
 
+
 st.sidebar.markdown("### アプリケーション情報")
 st.sidebar.info("このツールはSpaCyライブラリを使用して英文の品詞、依存関係、句構造を解析し、視覚的に表示します。")
 st.sidebar.markdown("---")
-display_color_legend() # 色分け凡例の呼び出し
+
+# 色分け凡例の呼び出し
+display_color_legend()
+
+
 st.sidebar.markdown("### 品詞の解説")
-st.sidebar.markdown("- **名詞 (NOUN)**: 人、場所、物、概念などを表す単語。")
-st.sidebar.markdown("- **動詞 (VERB)**: 動作や状態を表す単語。")
-st.sidebar.markdown("- **形容詞 (ADJ)**: 名詞や代名詞を修飾する単語。")
-st.sidebar.markdown("- **副詞 (ADV)**: 動詞、形容詞、他の副詞、文全体を修飾する単語。")
-st.sidebar.markdown("- **前置詞 (ADP)**: 名詞や代名詞の前に置かれ、他の語との関係を示す単語。")
-st.sidebar.markdown("- **限定詞 (DET)**: 名詞の前に置かれ、その名詞が特定のものであるか、一般的なものであるかを示す単語（例: a, the, this）。")
-st.sidebar.markdown("- **代名詞 (PRON)**: 名詞の代わりに使われる単語。")
-st.sidebar.markdown("- **助動詞 (AUX)**: 主動詞を助ける動詞（例: be, have, do, will）。")
-st.sidebar.markdown("- **接続詞 (CONJ/CCONJ/SCONJ)**: 単語、句、節などを結びつける単語。")
-st.sidebar.markdown("- **固有名詞 (PROPN)**: 特定の人、場所、組織などの名前。")
-st.sidebar.markdown("- **数詞 (NUM)**: 数量を表す単語。")
-st.sidebar.markdown("- **間投詞 (INTJ)**: 感情や驚きなどを表す単語（例: Oh!, Wow!）。")
-st.sidebar.markdown("- **句読点 (PUNCT)**: 文の句読点。")
+for pos_tag, description in analyzer.pos_map.items():
+    st.sidebar.markdown(f"- **{description} ({pos_tag})**")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 形態素情報 (Morphological Features) の解説")
+for morph_tag, description in analyzer.morph_map.items():
+    st.sidebar.markdown(f"- **{description} ({morph_tag})**")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 句構造の解説")
 st.sidebar.markdown("- **名詞句 (NP)**: 名詞を中心に構成される句。文の主語や目的語になることが多いです。例: `The quick brown fox`")
@@ -399,18 +657,11 @@ st.sidebar.markdown("- **前置詞句 (PP)**: 前置詞とそれに続く名詞�
 st.sidebar.markdown("- **副詞句 (ADVP)**: 副詞を中心に構成される句。動詞、形容詞、他の副詞を修飾します。例: `very quickly`")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 依存関係の解説")
-st.sidebar.markdown("- **ROOT**: 文の主動詞。文の中心となる単語です。")
-st.sidebar.markdown("- **nsubj (名詞主語)**: 動詞の主語となる名詞句。")
-st.sidebar.markdown("- **dobj (直接目的語)**: 動詞の直接目的語となる名詞句。")
-st.sidebar.markdown("- **amod (形容詞修飾語)**: 名詞を修飾する形容詞。")
-st.sidebar.markdown("- **advmod (副詞修飾語)**: 動詞、形容詞、他の副詞を修飾する副詞。")
-st.sidebar.markdown("- **prep (前置詞句)**: 前置詞とその目的語からなる句。")
-st.sidebar.markdown("- **pobj (前置詞の目的語)**: 前置詞の目的語となる名詞句。")
-st.sidebar.markdown("- **det (限定詞)**: 名詞を限定する単語（例: a, the, this）。")
-st.sidebar.markdown("- **aux (助動詞)**: 主動詞を助ける動詞（例: have, be, do）。")
-st.sidebar.markdown("- **cc (等位接続詞)**: 2つ以上の同等の要素（単語、句、節）を結びつける接続詞（例: and, but, or）。")
-st.sidebar.markdown("- **conj (接続)**: 等位接続詞によって結びつけられた要素。")
-st.sidebar.markdown("- **compound (複合語)**: 複数の単語が結合して一つの意味をなす複合語。")
-st.sidebar.markdown("- **punct (句読点)**: 文の句読点。")
+for dep_tag, description in analyzer.dep_map.items():
+    st.sidebar.markdown(f"- **{description} ({dep_tag})**")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 固有表現 (Named Entity) の解説")
+for ent_type, description in analyzer.ent_type_map.items():
+    st.sidebar.markdown(f"- **{description} ({ent_type})**")
 st.sidebar.markdown("---")
 st.sidebar.markdown("© 2025 英文解析プロジェクト")

@@ -461,15 +461,44 @@ def display_mermaid_chunk_tree(tokens_info, chunks_info, sentence_id):
                 mermaid_code += f"    {token_node_id}[{token_data['text']}]\n"
                 mermaid_code += f"    {chunk_id} --> {token_node_id}\n"
 
-    html_content = f'''
+    html_content = f"""
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <div class="mermaid">
-        {mermaid_code}
+    <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+    <div id="mermaid-chunk-container-{sentence_id}" style="width: 100%; height: 800px; border:1px solid #ddd; overflow: hidden;">
+        <div class="mermaid">
+{mermaid_code}
+        </div>
     </div>
     <script>
-        mermaid.initialize({{ startOnLoad: true }});
+    (function(){{
+        const container = document.getElementById('mermaid-chunk-container-{sentence_id}');
+        const mermaidDiv = container.querySelector('.mermaid');
+        const mermaidId = `mermaid-svg-chunk-{sentence_id}`;
+        
+        mermaid.initialize({{{{ startOnLoad: false }}}});
+        try {{
+            mermaid.render(mermaidId, mermaidDiv.textContent, (svgCode) => {{
+                mermaidDiv.innerHTML = svgCode;
+                const svg = mermaidDiv.querySelector('svg');
+                if (svg) {{
+                    svg.style.width = '100%';
+                    svg.style.height = '100%';
+                    svgPanZoom(svg, {{{{ 
+                        zoomEnabled: true,
+                        controlIconsEnabled: true,
+                        fit: true,
+                        center: true,
+                        minZoom: 0.5,
+                        maxZoom: 10
+                    }}}});
+                }}
+            }});
+        }} catch (e) {{
+            mermaidDiv.innerHTML = "図の描画に失敗しました: " + e.message;
+        }}
+    }})();
     </script>
-    '''
+    """
     components.html(html_content, height=800) # Adjust height as needed
 
 def display_chunks(tokens, chunks, i):

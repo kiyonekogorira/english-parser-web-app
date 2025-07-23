@@ -67,7 +67,7 @@ def display_tokens_detailed(tokens_info):
                 if token.get('entity_text'):
                     st.write(f"**固有表現全体:** {token['entity_text']}")
 
-def display_mermaid_dependency_tree(tokens_info):
+def display_mermaid_dependency_tree(tokens_info, sentence_id):
     st.subheader("依存関係ツリー (Mermaid版)")
     mermaid_code = "graph LR\n" # Left-Right direction for dependency tree
 
@@ -110,18 +110,47 @@ def display_mermaid_dependency_tree(tokens_info):
     mermaid_code += "    classDef main_node fill:#salmon,stroke:#333,stroke-width:2px;\n"
     mermaid_code += "    classDef other_node fill:#lightblue,stroke:#333,stroke-width:1px;\n"
 
-    html_content = f'''
+    html_content = f"""
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <div class="mermaid">
-        {mermaid_code}
+    <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+    <div id="mermaid-dep-container-{sentence_id}" style="width: 100%; height: 600px; border:1px solid #ddd; overflow: hidden;">
+        <div class="mermaid">
+{mermaid_code}
+        </div>
     </div>
     <script>
-        mermaid.initialize({{ startOnLoad: true }});
+    (function(){{
+        const container = document.getElementById('mermaid-dep-container-{sentence_id}');
+        const mermaidDiv = container.querySelector('.mermaid');
+        const mermaidId = `mermaid-svg-dep-{sentence_id}`;
+        
+        mermaid.initialize({{{{ startOnLoad: false }}}});
+        try {{
+            mermaid.render(mermaidId, mermaidDiv.textContent, (svgCode) => {{
+                mermaidDiv.innerHTML = svgCode;
+                const svg = mermaidDiv.querySelector('svg');
+                if (svg) {{
+                    svg.style.width = '100%';
+                    svg.style.height = '100%';
+                    svgPanZoom(svg, {{{{ 
+                        zoomEnabled: true,
+                        controlIconsEnabled: true,
+                        fit: true,
+                        center: true,
+                        minZoom: 0.5,
+                        maxZoom: 10
+                    }}}});
+                }}
+            }});
+        }} catch (e) {{
+            mermaidDiv.innerHTML = "図の描画に失敗しました: " + e.message;
+        }}
+    }})();
     </script>
-    '''
-    components.html(html_content, height=600) # Adjust height as needed
+    """
+    components.html(html_content, height=610)
 
-def display_dependency_tree(tokens_info):
+def display_dependency_tree(tokens_info, sentence_id):
     st.subheader("依存関係ツリー")
     graph = graphviz.Digraph(comment='Dependency Tree', format='svg')
     graph.attr(rankdir='LR', overlap='false', compound='true')
@@ -188,7 +217,7 @@ def display_dependency_tree(tokens_info):
 def get_chunk_color(chunk_type):
     return chunk_colors.get(chunk_type, '#808080') # Default to grey if not found
 
-def display_chunk_tree(tokens_info, chunks_info):
+def display_chunk_tree(tokens_info, chunks_info, sentence_id):
     st.subheader("句構造ツリー")
     graph = graphviz.Digraph(comment='Chunk Tree', format='svg')
     graph.attr(rankdir='TB', overlap='false', compound='true') # 上から下へのレイアウト
@@ -326,7 +355,7 @@ def display_chunk_tree(tokens_info, chunks_info):
     except Exception as e:
         st.error(f"句構造ツリーの表示中にエラーが発生しました: {e}")
 
-def display_mermaid_chunk_tree(tokens_info, chunks_info):
+def display_mermaid_chunk_tree(tokens_info, chunks_info, sentence_id):
     st.subheader("句構造ツリー (Mermaid版)")
     mermaid_code = "graph TD\n" # Top-Down direction for overall tree
 
@@ -443,18 +472,18 @@ def display_mermaid_chunk_tree(tokens_info, chunks_info):
     '''
     components.html(html_content, height=800) # Adjust height as needed
 
-def display_chunks(tokens_info, chunks_info):
+def display_chunks(tokens, chunks, i):
     st.subheader("句構造の階層表示")
-    display_chunk_tree(tokens_info, chunks_info)
+    display_chunk_tree(tokens, chunks, i)
 
     st.markdown("---")
     st.markdown("#### 検出された句の一覧 (ネスト構造):")
     
     # 句のネストレベルを計算して表示
     nested_chunks = []
-    for i, chunk in enumerate(chunks_info):
+    for i, chunk in enumerate(chunks):
         nesting_level = 0
-        for other_chunk in chunks_info:
+        for other_chunk in chunks:
             if chunk != other_chunk and \
                other_chunk['start_id'] <= chunk['start_id'] and \
                chunk['end_id'] <= other_chunk['end_id']:
@@ -620,13 +649,13 @@ if st.session_state.analysis_result:
         
         st.markdown("---")
         st.header("2. 依存関係解析")
-        display_dependency_tree(tokens)
-        display_mermaid_dependency_tree(tokens)
+        display_dependency_tree(tokens, i)
+        display_mermaid_dependency_tree(tokens, i)
 
         st.markdown("---")
         st.header("3. 句構造解析")
-        display_chunks(tokens, chunks)
-        display_mermaid_chunk_tree(tokens, chunks)
+        display_chunks(tokens, chunks, i)
+        display_mermaid_chunk_tree(tokens, chunks, i)
 
         # 期待される句構造のデバッグ表示 (該当する文のみ表示)
         if i < len(expected_chunks_data):

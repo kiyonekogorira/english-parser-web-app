@@ -565,10 +565,11 @@ def display_expected_chunks(expected_data):
     st.markdown("---")
 
 def display_color_legend():
-    st.sidebar.markdown("### 色分け凡例")
+    st.sidebar.markdown("### 色分け凡例と解説")
     st.sidebar.markdown("#### 品詞 (POS)")
-    for pos, color in pos_colors.items():
-        st.sidebar.markdown(f"<span style='color: {color};'>■</span> {analyzer.pos_map.get(pos, pos)} ({pos})", unsafe_allow_html=True)
+    for pos_tag, color in pos_colors.items():
+        description = analyzer.pos_map.get(pos_tag, pos_tag)
+        st.sidebar.markdown(f"<span style='color: {color};'>■</span> **{description} ({pos_tag})**", unsafe_allow_html=True)
     
     st.sidebar.markdown("#### 句構造 (Chunk)")
     for chunk_type, color in chunk_colors.items():
@@ -700,9 +701,7 @@ st.sidebar.markdown("---")
 display_color_legend()
 
 
-st.sidebar.markdown("### 品詞の解説")
-for pos_tag, description in analyzer.pos_map.items():
-    st.sidebar.markdown(f"- **{description} ({pos_tag})**")
+
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 形態素情報 (Morphological Features) の解説")
 for morph_tag, description in analyzer.morph_map.items():
